@@ -2061,7 +2061,7 @@ struct QuickPanelView: View {
                     ?? item.content.components(separatedBy: "\n").first { !$0.isEmpty }
                         .map { ($0 as NSString).expandingTildeInPath }
                 if let path {
-                    NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: URL(fileURLWithPath: path).deletingLastPathComponent().path)
+                    dismissAndRevealInFinder(path)
                 }
             }
         case .transform(let ruleAction):
@@ -2559,11 +2559,27 @@ struct QuickPanelView: View {
             handleDismiss()
         } else if let path = item.revealableFinderPath {
             // File / path clips: ⌘O jumps to the item in Finder instead of Quick Look.
-            handleDismiss()
-            NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: URL(fileURLWithPath: path).deletingLastPathComponent().path)
+            dismissAndRevealInFinder(path)
         } else {
             QuickLookHelper.shared.toggle(item: item)
         }
+    }
+
+    /// 「在 Finder 中显示」的统一出口（⌘O 底栏 / ⌘K 面板共用）：先收面板再让 Finder 选中文件。
+    /// 面板不收的话，它作为浮动 key 窗口一直压在 Finder 窗口上面，Finder 虽已显示文件却
+    /// 像「没到前台」；收面板走 force 路径会把焦点交还 previousApp，再由 Finder 自己抢前台。
+    private func dismissAndRevealInFinder(_ path: String) {
+        // ⌘K 面板对文件类条目一律列出该动作，路径可能已失效（文件删了 / 移走了）。
+        // 先收面板再发现 Finder 打不开，用户看到的是「面板没了、什么都没发生」——
+        // 所以先验存在性，失效就留在面板里提示，顺手把命令浮层收掉。
+        guard FileManager.default.fileExists(atPath: path) else {
+            showCommandPalette = false
+            isSearchFocused = true
+            ToastCenter.shared.show(ToastDescriptor(message: L10n.tr("file.unavailable.missing"), icon: .info))
+            return
+        }
+        handleDismiss()
+        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: URL(fileURLWithPath: path).deletingLastPathComponent().path)
     }
 
     private func handleDismiss() {

@@ -582,7 +582,12 @@ final class ClipboardManager: ObservableObject {
         guard let dir = originalsCacheDirectory() else { return }
         let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         guard !files.isEmpty else { return }
-        let descriptor = FetchDescriptor<ClipItem>()
+        // 谓词必须有：只取真正引用了缓存文件的行。不加谓词会把整张 ClipItem 表（含内联
+        // 缩略图 blob，万条级库 200MB+）物化进 mainContext，只为读一个 String? 列——
+        // 启动路径卡 1s+ 的主因（11k 条实测全表 ~100ms 热 / ~600ms 冷 vs 谓词 ~5ms）。
+        let descriptor = FetchDescriptor<ClipItem>(
+            predicate: #Predicate { $0.originalImageFilePath != nil }
+        )
         let referenced = Set((try? context.fetch(descriptor))?.compactMap(\.originalImageFilePath) ?? [])
         Task.detached(priority: .utility) {
             for file in files where !referenced.contains(file.path) {

@@ -388,6 +388,10 @@ struct PasteMemoApp: App {
             "CREATE INDEX IF NOT EXISTS idx_clip_pinned_lastused ON ZCLIPITEM (ZISPINNED, ZLASTUSEDAT DESC)",
             "CREATE INDEX IF NOT EXISTS idx_clip_sourceapp ON ZCLIPITEM (ZSOURCEAPP)",
             "CREATE INDEX IF NOT EXISTS idx_clip_itemid ON ZCLIPITEM (ZITEMID)",
+            // 启动时孤儿缓存文件清理只查 originalImageFilePath != nil（SwiftData 翻译成
+            // `IS NOT NULL`）。不建索引是 SCAN 全表叶子页（万条级库冷启动 ~250ms）；
+            // 部分索引只含非空行（几十条），查询变成索引 SEARCH。普通索引对 IS NOT NULL 不生效。
+            "CREATE INDEX IF NOT EXISTS idx_clip_originalpath ON ZCLIPITEM (ZORIGINALIMAGEFILEPATH) WHERE ZORIGINALIMAGEFILEPATH IS NOT NULL",
         ]
         for sql in indexes { db.execute(sql) }
 
@@ -447,8 +451,12 @@ struct PasteMemoApp: App {
         // so a one-time backfill doesn't choke on legacy rows that pre-date
         // the size cap (e.g. 10 MB base64 data URIs ingested before the
         // pre-decode landed).
-        let count = db.queryStrings("SELECT COUNT(*) FROM clip_fts")
-        if count.first == "0" {
+        // 只需判空。FTS5 虚拟表没有行数捷径，COUNT(*) 要走完整个索引（万条级库冷启动
+        // ~70ms）；LIMIT 1 探测只读一行。外层 COALESCE 保证查询成功时恰好返回一行
+        // "1"/"0"，查询失败（表缺失 / 锁忙）时 queryStrings 返回 []——此时不 backfill，
+        // 避免在表其实非空的情况下重复灌入。
+        let probe = db.queryStrings("SELECT COALESCE((SELECT 1 FROM clip_fts LIMIT 1), 0)")
+        if probe.first == "0" {
             db.execute("""
                 INSERT INTO clip_fts(itemID, content, displayTitle, linkTitle, ocrText)
                 SELECT ZITEMID, COALESCE(ZCONTENT, ''), COALESCE(ZDISPLAYTITLE, ''), COALESCE(ZLINKTITLE, ''), COALESCE(ZOCRTEXT, '')

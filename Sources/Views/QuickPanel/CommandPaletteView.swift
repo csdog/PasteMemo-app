@@ -139,7 +139,7 @@ enum CommandAction: Hashable {
     /// and the close stalls for a beat (the lag vs. a direct Enter paste).
     var dismissesQuickPanel: Bool {
         switch self {
-        case .paste, .pasteAndDestroy, .cmdEnter, .copy, .pasteOCR: true
+        case .paste, .pasteAndDestroy, .cmdEnter, .copy, .pasteOCR, .showInFinder: true
         default: false
         }
     }
