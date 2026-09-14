@@ -145,6 +145,18 @@ struct VerificationCodeExtractorTests {
         "【京红包】恭喜您，获得京东618超级红包补贴，最高20618元，打开京东APP首页输入：红包每天领 即可领取，可领三次，验证码 拒T",
         "【什么值得买】北京消费券再来！1500元大额券包！每天10点发放，买大件超值 smzdm.com/a/xxxx 回验证码N拒",
         "【天津农行】密码太长不用烦，快捷登录更安全！点击 go.abchina.com/k/0t7 立即设置。如有疑问请致电95599。退订请回TD#TJ。",
+
+        // ---- Security advisories: keyword in a NEGATED context, no code ----
+        // Awareness broadcast that reached the fallback notification in 1.10.x
+        // (user-reported, sanitized). Length alone settles it; the anti-fraud
+        // wording backs it up.
+        "【某某基金】尊敬的客户：2026年9月14日至20日是国家网络安全宣传周，今年的主题是“网络安全为人民，网络安全靠人民”。没有网络安全，就没有国家安全，让我们提升网络安全意识，增强网络安全技能，携手共筑国家网络安全屏障。为提高金融风险防范意识，某某基金温馨提示您：投资需谨慎，“稳赚不赔”“高额回报”往往是诈骗话术，请勿向他人泄露账户密码及短信验证码。",
+        // Short advisory — caught by the negation + disclosure-verb combo
+        "【某某银行】我行工作人员绝不会向您索要短信验证码、取款密码，请勿泄露给任何人。",
+        "【某某支付】警惕冒充客服的诈骗电话，任何要求提供验证码的都是骗子。",
+        "【某某银行】您的账户已开通安全提醒服务，请勿将动态密码告知他人。",
+        // English advisory
+        "Your bank will never ask for your verification code or password. Beware of phishing calls.",
     ]
 
     @Test("Ordinary SMS never trigger", arguments: negativeCases)
@@ -183,6 +195,39 @@ struct VerificationCodeExtractorTests {
     func fallsBackToFullMessage(message: String) {
         #expect(VerificationCodeExtractor.isLikelyVerificationMessage(message))
         #expect(VerificationCodeExtractor.extract(from: message) == nil)
+    }
+
+    // MARK: - Security-advice suppression (unit-level)
+
+    /// The suppression's safety valve: a message carrying a code is never judged
+    /// on its wording, however long it is and however much anti-fraud copy it
+    /// wraps around the code.
+    @Test("Advice wording never swallows a real code")
+    func adviceNeverSwallowsCode() {
+        let longAdvisoryWithCode =
+            "【某某银行】尊敬的客户，近期电信诈骗高发，冒充公检法、客服退款的骗子层出不穷，"
+            + "我行工作人员绝不会以任何理由向您索要短信验证码、账户密码或要求转账到所谓安全账户。"
+            + "您本次网银登录的验证码为 553377，5分钟内有效，请勿泄露给任何人。"
+        #expect(VerificationCodeExtractor.extract(from: longAdvisoryWithCode) == "553377")
+        #expect(VerificationCodeExtractor.isLikelyVerificationMessage(longAdvisoryWithCode))
+    }
+
+    /// Negation and the disclosure verb may straddle a line break.
+    @Test("Multi-line advisory still suppressed")
+    func multiLineAdvisory() {
+        #expect(!VerificationCodeExtractor.isLikelyVerificationMessage(
+            "【某某银行】安全提醒：\n请勿向任何人\n泄露短信验证码。"
+        ))
+    }
+
+    /// Length gate: a keyword-bearing message with no extractable code at all is
+    /// judged advice past the threshold even without the wording signals.
+    @Test("Length gate needs both no-code and overlength")
+    func lengthGate() {
+        let filler = String(repeating: "感谢您一直以来对我们的支持与信任。", count: 9)  // >140
+        #expect(!VerificationCodeExtractor.isLikelyVerificationMessage("验证码相关说明。" + filler))
+        // Same wording under the threshold still reaches the fallback path
+        #expect(VerificationCodeExtractor.isLikelyVerificationMessage("验证码相关说明。感谢您的支持。"))
     }
 
     // MARK: - Exclusion rules (unit-level)
