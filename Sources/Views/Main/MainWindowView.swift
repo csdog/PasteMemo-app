@@ -938,7 +938,7 @@ struct MainWindowView: View {
                 }
             }
         case .openInPreview:
-            QuickLookHelper.shared.openInPreviewApp(item: item)
+            QuickLookHelper.shared.present(item: item)
         case .addToRelay:
             let items = selectedItems.count > 1 ? selectedClipItems : [item]
             RelayManager.shared.addToQueue(clipItems: items)

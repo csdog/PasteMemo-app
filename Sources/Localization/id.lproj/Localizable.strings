@@ -854,6 +854,7 @@ Gunakan %@ untuk menempel satu per satu.";
 "detail.ocr.failed" = "OCR gagal untuk gambar ini.";
 "quick.ocrMatch" = "Cocok di teks hasil OCR";
 "cmd.openInPreview" = "Buka di Pratinjau";
+"cmd.quickLook" = "Pratinjau Cepat";
 "cmd.retryOCR" = "Coba lagi OCR";
 "cmd.pasteOCR" = "Tempel teks OCR";
 

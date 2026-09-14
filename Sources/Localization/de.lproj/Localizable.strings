@@ -866,6 +866,7 @@ Verwenden Sie %@ zum Einfügen.";
 "detail.ocr.failed" = "OCR für dieses Bild ist fehlgeschlagen.";
 "quick.ocrMatch" = "Treffer im erkannten Text";
 "cmd.openInPreview" = "In Vorschau öffnen";
+"cmd.quickLook" = "Übersicht";
 "cmd.retryOCR" = "OCR erneut ausführen";
 "cmd.pasteOCR" = "OCR-Text einfügen";
 

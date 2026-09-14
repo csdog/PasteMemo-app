@@ -854,6 +854,7 @@
 "detail.ocr.failed" = "Не удалось выполнить OCR для этого изображения.";
 "quick.ocrMatch" = "Совпадение в распознанном тексте";
 "cmd.openInPreview" = "Открыть в Просмотре";
+"cmd.quickLook" = "Быстрый просмотр";
 "cmd.retryOCR" = "Повторить OCR";
 "cmd.pasteOCR" = "Вставить OCR-текст";
 

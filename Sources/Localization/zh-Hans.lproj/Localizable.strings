@@ -716,6 +716,7 @@
 "cmd.pasteAsFile" = "粘贴为文件";
 "cmd.pastePath" = "粘贴路径";
 "cmd.openInPreview" = "用“预览”打开";
+"cmd.quickLook" = "快速查看";
 "cmd.retryOCR" = "重新识别 OCR";
 "cmd.pasteOCR" = "粘贴 OCR 文字";
 "cmd.andNewLine" = "并换行";

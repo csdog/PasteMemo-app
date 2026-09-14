@@ -840,6 +840,7 @@
 "detail.ocr.failed" = "這張圖片的 OCR 辨識失敗。";
 "quick.ocrMatch" = "命中辨識文字";
 "cmd.openInPreview" = "用「預覽」打開";
+"cmd.quickLook" = "快速查看";
 "cmd.retryOCR" = "重新辨識 OCR";
 "cmd.pasteOCR" = "貼上 OCR 文字";
 

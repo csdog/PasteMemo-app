@@ -2019,7 +2019,7 @@ struct QuickPanelView: View {
             }
         case .openInPreview:
             if let item = currentItem {
-                QuickLookHelper.shared.openInPreviewApp(item: item)
+                QuickLookHelper.shared.present(item: item)
             }
         case .addToRelay:
             let items = isMultiSelected ? currentItems : (currentItem.map { [$0] } ?? [])

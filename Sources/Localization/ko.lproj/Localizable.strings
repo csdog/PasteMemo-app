@@ -882,6 +882,7 @@
 "detail.ocr.failed" = "이 이미지의 OCR에 실패했습니다.";
 "quick.ocrMatch" = "인식된 텍스트에서 일치";
 "cmd.openInPreview" = "미리보기로 열기";
+"cmd.quickLook" = "훑어보기";
 "cmd.retryOCR" = "OCR 다시 시도";
 "cmd.pasteOCR" = "OCR 텍스트 붙여넣기";
 

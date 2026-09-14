@@ -15,7 +15,10 @@ enum CommandAction: Hashable {
     /// demand first when the text isn't cached). Falls back to clipboard when
     /// there's no target app, e.g. in the main window.
     case pasteOCR
-    case openInPreview
+    /// 查看条目内容。`usesPreviewApp` 为真时交给 Preview.app（图片 / PDF），否则走
+    /// Quick Look。分两条路是因为 Preview.app 打不开纯文本，而 Quick Look 什么都能显示
+    /// ——统一走 Preview.app 的话，文本条目点下去 Preview 只会被拉到前台、不开窗。
+    case openInPreview(usesPreviewApp: Bool)
     case showInFinder
     case copy
     case transform(RuleAction)
@@ -37,7 +40,7 @@ enum CommandAction: Hashable {
         case .copyColorFormat: "paintpalette"
         case .retryOCR: "text.viewfinder"
         case .pasteOCR: "doc.text"
-        case .openInPreview: "photo.on.rectangle.angled"
+        case .openInPreview(let usesPreviewApp): usesPreviewApp ? "photo.on.rectangle.angled" : "eye"
         case .showInFinder: "folder"
         case .copy: "doc.on.doc"
         case .transform: "wand.and.stars"
@@ -58,7 +61,8 @@ enum CommandAction: Hashable {
         case .copyColorFormat(_, let label): label
         case .retryOCR: L10n.tr("cmd.retryOCR")
         case .pasteOCR: L10n.tr("cmd.pasteOCR")
-        case .openInPreview: L10n.tr("cmd.openInPreview")
+        case .openInPreview(let usesPreviewApp):
+            usesPreviewApp ? L10n.tr("cmd.openInPreview") : L10n.tr("cmd.quickLook")
         case .showInFinder: L10n.tr("cmd.showInFinder")
         case .copy: L10n.tr("cmd.copy")
         case .transform(let action): action.displayLabel
@@ -247,8 +251,8 @@ struct CommandPaletteContent: View {
         }
         if !isMultiSelected,
            let item,
-           canOpenInPreview(item) {
-            list.append(.openInPreview)
+           let route = QuickLookHelper.shared.previewRoute(for: item) {
+            list.append(.openInPreview(usesPreviewApp: route == .previewApp))
         }
         // File-based clips always offer "Show in Finder"; plain-text clips do too
         // when their content is itself an existing filesystem path.
@@ -295,10 +299,6 @@ struct CommandPaletteContent: View {
         case .image, .file, .document, .archive, .application, .video, .audio:
             L10n.tr("cmd.pastePath")
         }
-    }
-
-    private func canOpenInPreview(_ item: ClipItem) -> Bool {
-        QuickLookHelper.shared.canOpenInPreview(item: item)
     }
 
     /// 浮层形态才套 ScrollView，且 ScrollViewReader 必须和 selectedIndex 在同一个

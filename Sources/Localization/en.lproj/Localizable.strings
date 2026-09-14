@@ -715,6 +715,7 @@
 "cmd.pasteAsFile" = "Paste as File";
 "cmd.pastePath" = "Paste Path";
 "cmd.openInPreview" = "Open in Preview";
+"cmd.quickLook" = "Quick Look";
 "cmd.retryOCR" = "Retry OCR";
 "cmd.pasteOCR" = "Paste OCR Text";
 "cmd.andNewLine" = " + New Line";

@@ -844,6 +844,7 @@ Usa %@ per incollare uno per uno.";
 "detail.ocr.failed" = "OCR non riuscito per questa immagine.";
 "quick.ocrMatch" = "Corrispondenza nel testo riconosciuto";
 "cmd.openInPreview" = "Apri in Anteprima";
+"cmd.quickLook" = "Vista rapida";
 "cmd.retryOCR" = "Riprova OCR";
 "cmd.pasteOCR" = "Incolla testo OCR";
 

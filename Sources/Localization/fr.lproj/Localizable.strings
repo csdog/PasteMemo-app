@@ -884,6 +884,7 @@ Utilisez %@ pour coller un par un.";
 "detail.ocr.failed" = "Échec de l'OCR pour cette image.";
 "quick.ocrMatch" = "Correspondance dans le texte reconnu";
 "cmd.openInPreview" = "Ouvrir dans Aperçu";
+"cmd.quickLook" = "Coup d'œil";
 "cmd.retryOCR" = "Relancer l'OCR";
 "cmd.pasteOCR" = "Coller le texte OCR";
 

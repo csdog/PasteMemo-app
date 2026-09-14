@@ -479,6 +479,7 @@
 "cmd.retryOCR" = "OCRを再試行";
 "cmd.pasteOCR" = "OCRテキストを貼り付け";
 "cmd.openInPreview" = "「プレビュー」で開く";
+"cmd.quickLook" = "クイックルック";
 "cmd.andNewLine" = "＋改行";
 "cmd.transform" = "変換";
 "cmd.automation" = "オートメーション";
