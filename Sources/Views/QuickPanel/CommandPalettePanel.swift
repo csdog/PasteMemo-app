@@ -100,6 +100,9 @@ final class CommandPalettePanel {
         let shadowPanel = self.shadowPanel ?? makeShadowPanel()
         shadowPanel.contentView = Self.makeShadowView(size: shadowFrame.size)
         shadowPanel.setFrame(shadowFrame, display: false)
+        // 投影比卡片早约 40ms 上屏（卡片内容要等窗口合成完再挂），先隐着，和卡片
+        // 一起在 present 里淡入，否则会先闪出一圈没有卡片的影子。
+        shadowPanel.alphaValue = 0
         if shadowPanel.parent == nil {
             parent.addChildWindow(shadowPanel, ordered: .above)
         }
@@ -185,8 +188,9 @@ final class CommandPalettePanel {
             self.occlusionObserver = nil
         }
         if panel.occlusionState.contains(.visible) {
-            DispatchQueue.main.async { [weak panel] in
-                panel?.contentView = hosting
+            DispatchQueue.main.async { [weak self, weak panel] in
+                guard let panel else { return }
+                self?.present(hosting, in: panel)
             }
             return
         }
@@ -198,7 +202,50 @@ final class CommandPalettePanel {
                 NotificationCenter.default.removeObserver(obs)
                 self?.occlusionObserver = nil
             }
-            panel.contentView = hosting
+            self?.present(hosting, in: panel)
+        }
+    }
+
+    /// 玻璃采样期：内容挂上后先在全透明状态停这么久再开始淡入。玻璃第一帧按外观
+    /// 画一版、背景采样回来才变成真玻璃，中间差一两帧；淡入从 0 起步的话文字会先于
+    /// 玻璃被看到，卡片和内容像是分两次出现。两帧（约 33ms）够采样完成。
+    private static let glassSettleDelay: TimeInterval = 0.035
+
+    /// 挂上内容并做一个短促的入场：窗口透明度 0→1 加内容层 0.96→1 的缩放，120ms
+    /// easeOut。透明度走窗口服务器、缩放只动图层 transform，都不会把玻璃拖进离屏
+    /// 渲染。透明度在同一轮里先归零再挂内容，中间不会画出一帧全亮的卡片。
+    private func present(_ hosting: NSView, in panel: NSPanel) {
+        panel.alphaValue = 0
+        shadowPanel?.alphaValue = 0
+        panel.contentView = hosting
+        hosting.wantsLayer = true
+        if let layer = hosting.layer {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let bounds = hosting.bounds
+            layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+            layer.position = CGPoint(x: bounds.midX, y: bounds.midY)
+            layer.transform = CATransform3DMakeScale(0.96, 0.96, 1)
+            CATransaction.commit()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.glassSettleDelay) { [weak self, weak panel, weak hosting] in
+            // 停留期间被收起了就不动画（hide 已把 contentView 置空）
+            guard let panel, let hosting, panel.contentView === hosting else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.12
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                panel.animator().alphaValue = 1
+                self?.shadowPanel?.animator().alphaValue = 1
+            }
+            if let layer = hosting.layer {
+                let anim = CABasicAnimation(keyPath: "transform")
+                anim.fromValue = CATransform3DMakeScale(0.96, 0.96, 1)
+                anim.toValue = CATransform3DIdentity
+                anim.duration = 0.12
+                anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                layer.add(anim, forKey: "present")
+                layer.transform = CATransform3DIdentity
+            }
         }
     }
 
@@ -216,6 +263,7 @@ final class CommandPalettePanel {
         guard let panel else { return }
         panel.parent?.removeChildWindow(panel)
         panel.orderOut(nil)
+        panel.alphaValue = 1
         // contentView 留着会让 SwiftUI 视图树一直活着（键盘 monitor 也不释放）
         panel.contentView = nil
         self.panel = nil
