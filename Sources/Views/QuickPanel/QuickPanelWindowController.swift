@@ -18,10 +18,12 @@ private let MIN_WIDTH: CGFloat = 360
 private let MIN_HEIGHT: CGFloat = 420
 private let PANEL_CORNER_RADIUS: CGFloat = 16
 
-/// Liquid Glass 面板那层亮度锁定底色的不透明度。玻璃从剩下的 (1 - a) 里透出色调
-/// 和边缘特征——调低更通透，但外观与背后内容明暗错配时列表文字会开始发灰（这正是
-/// ed71b8b 回退掉的那种糊）。改这个值前先在浅色外观叠深色终端的组合上验一遍。
-private let GLASS_CONTRAST_ALPHA: CGFloat = 0.5
+/// Liquid Glass 面板那层亮度锁定底色的不透明度。这层铺在玻璃**下方**、被玻璃一起
+/// 采样折射，所以它只决定玻璃看到的「背景」有多亮，不会盖住玻璃自己的边缘折射与
+/// 高光。取值偏高是刻意的：面板本体要像 Raycast 那样安静，浮在它上面的三块玻璃
+/// （标签栏、底栏胶囊、⌘K 卡片）才是层次的来源；0.25 时面板整块吸环境色，彩色
+/// 背景前很「玻璃」但很吵，浮起元素反而分不出来。
+private let GLASS_CONTRAST_ALPHA: CGFloat = 0.7
 
 /// 把对比层底色朝黑压一档，两种外观都要压、系数不同。注意光降 GLASS_CONTRAST_ALPHA
 /// 治不了发白——那只是让背后内容透得更多，背后是白的结果还是白。
@@ -67,8 +69,9 @@ private class KeyablePanel: NSPanel {
     }
 }
 
-/// Liquid Glass 面板的亮度锁定层：铺在 NSGlassEffectView 之上、内容之下，用标准
-/// alpha 合成把面板底色钉在 windowBackgroundColor 附近，使其跟随外观而非背后内容。
+/// Liquid Glass 面板的亮度锁定层：铺在 NSGlassEffectView **之下**，作为玻璃采样的
+/// 背景的一部分，把玻璃看到的底色拉向 windowBackgroundColor，使其跟随外观而非背后
+/// 内容。放在玻璃下面而不是上面，玻璃的边缘折射、高光和环境取色才不会被它盖掉。
 /// 走 updateLayer 而不是一次性写 layer.backgroundColor —— CGColor 是解析过的静态
 /// 颜色，不会自己跟随深浅色切换，直接设一次会把面板永久留在切换前的底色上。
 private class GlassContrastView: NSView {
@@ -299,6 +302,46 @@ final class QuickPanelWindowController {
 
     /// - Parameter force: 置顶时，粘贴/复制完成的收尾调用（`force == false`）不关闭面板，
     ///   让用户连续操作；只有用户主动关闭（Esc / 再次按开关热键 / 关闭按钮等）才传 `force: true`。
+    /// 面板失去 key 的统一处理。两个入口：面板自己的 didResignKey，以及 ⌘K 卡片
+    /// （它持有 key 期间面板拒绝成为 key）把 key 丢给了别的窗口。
+    func handleResignKey() {
+        guard !suppressDismiss else { return }
+        // key 被自家 ⌘K 菜单拿走（玻璃只在 key 窗口里正常渲染），不是用户点了别处
+        if let palette = CommandPalettePanel.shared.panelWindow, NSApp.keyWindow === palette {
+            return
+        }
+        if isPinned {
+            // When pinned and panel loses key (user clicked another app), release
+            // the SwiftUI FocusState so it stops fighting to become key again.
+            NotificationCenter.default.post(name: .quickPanelPinnedResignKey, object: nil)
+            return
+        }
+        let isMouseDown = NSEvent.pressedMouseButtons != 0
+        let mouseInPanel = panel?.frame.contains(NSEvent.mouseLocation) ?? false
+        if isMouseDown, mouseInPanel { return }
+        dismiss()
+    }
+
+    private var paletteHoldsKey = false
+    private var refuseKeyBeforePalette = false
+
+    /// ⌘K 卡片持有 key 期间，主面板拒绝成为 key：点条目照样选中、卡片照样刷新，
+    /// 但 key 不会在两个窗口之间来回跳（跳一次卡片的玻璃就要重新初始化一次，搜索框
+    /// 焦点也会丢）。卡片收起时恢复原状并把 key 拿回来。
+    /// 只在状态切换时存取：卡片每次打开 show() 会被调用两三次，重复保存会把
+    /// 「拒绝」当成原值存下来，收起后主面板永远拿不到 key。
+    func setPaletteHoldsKey(_ holds: Bool) {
+        guard let panel = panel as? KeyablePanel, holds != paletteHoldsKey else { return }
+        paletteHoldsKey = holds
+        if holds {
+            refuseKeyBeforePalette = panel.refuseKey
+            panel.refuseKey = true
+        } else {
+            panel.refuseKey = refuseKeyBeforePalette
+            if panel.isVisible, !panel.refuseKey { panel.makeKey() }
+        }
+    }
+
     func dismiss(force: Bool = false) {
         if isPinned && !force { return }
         isPinned = false
@@ -441,32 +484,32 @@ final class QuickPanelWindowController {
         // 锁死。166c650 那版把 hostingView 直接设成 glass.contentView，亮度全靠
         // tintColor——而 tint 是「染色」（跟背景混合、保留背景亮度），不是 alpha
         // 合成，所以探针里 tint 1.0 叠黑背景仍是中灰、黑字糊掉，ed71b8b 才整体回退。
-        // 这里改成 glass 在下、GlassContrastView 在上的分层：contrast 层是标准
-        // alpha 合成（result = a*windowBackground + (1-a)*glass），亮度可预测且
-        // 跟随外观而非背后内容，玻璃则从剩下的 (1-a) 里透出色调与边缘特征。
+        // 这里改成 GlassContrastView 在下、glass 在上的分层：contrast 层成为玻璃
+        // 采样背景的一部分（glass 看到的是 a*windowBackground + (1-a)*窗口后方），
+        // 亮度可预测且跟随外观，而玻璃自己的折射、高光、取色完整保留在最上面。
         let panelFrame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
         let container: NSView
         if #available(macOS 26.0, *) {
-            // 对比层做玻璃的「兄弟」而不是 glass.contentView：兄弟层是普通 alpha
-            // 合成（result = a*windowBackground + (1-a)*玻璃），亮度可预测、跟随
-            // 外观而非背后内容，这正是 ed71b8b 里 tintColor 给不了的东西——tint 是
-            // 染色，保留背景亮度，所以 tint 1.0 叠黑背景仍是中灰。
-            // （contentView 路径是否也能承载纯色底未验证；兄弟结构语义更直白，
-            // 且不依赖 NSGlassEffectView 对 contentView 的内部合成行为。）
+            // 对比层做玻璃的「兄弟」而不是 tintColor：tint 是染色、保留背景亮度，
+            // 所以 tint 1.0 叠黑背景仍是中灰（ed71b8b 踩过）；兄弟层是普通 alpha
+            // 合成，亮度可预测。
             let glassHost = NSView(frame: panelFrame)
             glassHost.wantsLayer = true
             glassHost.layer?.cornerRadius = PANEL_CORNER_RADIUS
             glassHost.layer?.masksToBounds = true
 
-            let glass = NSGlassEffectView(frame: panelFrame)
-            glass.cornerRadius = PANEL_CORNER_RADIUS
-            glass.autoresizingMask = [.width, .height]
-            glassHost.addSubview(glass)
-
+            // 对比层先加、位于玻璃下方：玻璃采样的是「窗口后方内容 + 这层底色」，
+            // 折射、边缘高光、环境取色都画在它之上。之前把它盖在玻璃上面，等于在
+            // 玻璃上贴了一层半透明磨砂膜，把玻璃的身份特征均匀削掉了一半。
             let backdrop = GlassContrastView(frame: panelFrame)
             backdrop.wantsLayer = true
             backdrop.autoresizingMask = [.width, .height]
             glassHost.addSubview(backdrop)
+
+            let glass = NSGlassEffectView(frame: panelFrame)
+            glass.cornerRadius = PANEL_CORNER_RADIUS
+            glass.autoresizingMask = [.width, .height]
+            glassHost.addSubview(glass)
 
             glassHost.addSubview(hostingView)
             NSLayoutConstraint.activate([
@@ -734,17 +777,7 @@ final class QuickPanelWindowController {
             queue: nil
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self, !self.suppressDismiss else { return }
-                if self.isPinned {
-                    // When pinned and panel loses key (user clicked another app), release
-                    // the SwiftUI FocusState so it stops fighting to become key again.
-                    NotificationCenter.default.post(name: .quickPanelPinnedResignKey, object: nil)
-                    return
-                }
-                let isMouseDown = NSEvent.pressedMouseButtons != 0
-                let mouseInPanel = self.panel?.frame.contains(NSEvent.mouseLocation) ?? false
-                if isMouseDown, mouseInPanel { return }
-                self.dismiss()
+                self?.handleResignKey()
             }
         }
         // 置顶悬浮时用户会在多个 App 间切换。粘贴目标 previousApp 原本只在 show() 时记录一次，

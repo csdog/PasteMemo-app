@@ -918,9 +918,9 @@ struct QuickPanelView: View {
                         // 整排再套一层玻璃做容器：未选中项是 .identity（不渲染玻璃），
                         // 少了这层整排就只剩文字浮在面板上、跟背景糊成一片。两层玻璃都在
                         // 同一个 GlassEffectContainer 里，系统会正确处理嵌套与融合。
-                        // 和底栏胶囊统一用 .regular，否则两处玻璃档位不同、深色下
-                        // 一眼能看出色差。滑块靠 tint 跟容器拉开，不靠降容器档位。
-                        .glassEffect(.regular, in: .capsule)
+                        // 和底栏胶囊、⌘K 卡片统一走 GlassSurface（同一档 .regular），
+                        // 三处浮起元素才是同一种材质。滑块靠 tint 跟容器拉开，不靠降容器档位。
+                        .modifier(GlassSurface(shape: Capsule()))
                     }
                     .padding(.horizontal, 18)
                     .padding(.bottom, 8)
@@ -1209,8 +1209,8 @@ struct QuickPanelView: View {
         )
     }
 
-    /// 菜单卡片本体。投影交给 NSPanel（hasShadow）——独立窗口的投影由窗口服务器
-    /// 绘制，比在 SwiftUI 里叠 .shadow 更干净，也不会被窗口边界裁掉。
+    /// 菜单卡片本体。这里不能加 .shadow：套在玻璃上会让整块卡片退化成实色。投影由
+    /// CommandPalettePanel 在另一个透明子窗口里画（见其类注释）。
     @ViewBuilder
     private func paletteCard(for item: ClipItem) -> some View {
         // ScrollView 已挪进 CommandPaletteContent（要和 selectedIndex 同处一个 view
@@ -1241,11 +1241,6 @@ struct QuickPanelView: View {
 
     // MARK: - Footer
 
-    /// 底栏动作组的浮起胶囊，直接落在面板玻璃上（底栏本身没有背景条和分隔线）。
-    /// 刻意用「跟随外观的实底 + 强阴影」而不是 glassEffect：玻璃取周围颜色，在
-    /// 浅色玻璃面板上会跟底色糊成一片、完全立不起来。controlBackgroundColor 比
-    /// windowBackgroundColor 亮一档，浅色下接近纯白、深色下是深灰，两种外观都能
-    /// 从面板里浮出来。
     /// 底栏图标按钮。macOS 26 用原生 `.buttonStyle(.glass)`——玻璃外形、hover 与
     /// 按压态全由系统给，不用自己维护。旧系统降级到 plain + 手写 hover 高亮。
     private struct GlassIconButton: ViewModifier {
@@ -1493,12 +1488,17 @@ struct QuickPanelView: View {
 
     private func footerKey(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
+            // 和 ⌘K 卡片里的键位标签同一套画法：独立圆角小方块 + 细描边
             Text(key)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                .padding(.horizontal, 5)
+                .frame(minWidth: 22, minHeight: 22)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.primary.opacity(0.10), lineWidth: 0.5)
+                )
             Text(label)
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
