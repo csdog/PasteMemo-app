@@ -21,9 +21,13 @@ struct SettingsView: View {
                     ForEach(SettingsCategory.aboutGroup) { sidebarRow($0) }
                 }
             }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
+            .navigationSplitViewColumnWidth(min: 200, ideal: 215, max: 260)
+            // 系统设置没有侧栏折叠按钮
+            .toolbar(removing: .sidebarToggle)
         } detail: {
             detailView(for: selection ?? .general)
+                // 去掉标题栏底色和那条分隔线，内容直接从顶部开始，同系统设置
+                .toolbarBackground(.hidden, for: .windowToolbar)
         }
         .frame(minWidth: 700, minHeight: 460)
         .localized()
@@ -37,20 +41,22 @@ struct SettingsView: View {
         WindowManager.shared.setTitle(L10n.tr((selection ?? .general).titleKey), for: "settings")
     }
 
-    /// 侧边栏一行：彩色圆角图标块 + 页名，系统设置同款。选中态由 List 负责。
+    /// 侧边栏一行：彩色圆角图标块 + 页名，尺寸对齐系统设置（26pt 图标块、
+    /// 行高约 34pt）。选中态由 List 负责。
     private func sidebarRow(_ category: SettingsCategory) -> some View {
-        Label {
-            Text(L10n.tr(category.titleKey))
-        } icon: {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
+        HStack(spacing: 8) {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(category.tileColor.gradient)
-                .frame(width: 22, height: 22)
+                .frame(width: 26, height: 26)
                 .overlay(
                     Image(systemName: category.icon)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(.white)
                 )
+            Text(L10n.tr(category.titleKey))
+                .font(.system(size: 13))
         }
+        .padding(.vertical, 3)
         .tag(category)
     }
 
