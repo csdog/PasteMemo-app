@@ -85,6 +85,22 @@ private struct PaletteHeightPreferenceKey: PreferenceKey {
     }
 }
 
+/// tabBar 这一排的本地坐标系名。拖拽切换要把手指位置和各标签的 frame 放在同一个
+/// 空间里比较，用 `.local` 会随子视图变，用 `.global` 又会被窗口位置污染。
+private let TAB_STRIP_COORD_SPACE = "quickPanelTabStrip"
+
+/// 每个筛选标签在 tabBar 坐标系中的 frame，供拖拽命中测试用。
+private struct TabFramesPreferenceKey: PreferenceKey {
+    static let defaultValue: [QuickFilter: CGRect] = [:]
+    static func reduce(value: inout [QuickFilter: CGRect], nextValue: () -> [QuickFilter: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+/// 拖拽时纵向拉开多远算「手指移出了控件、这次取消」。UISegmentedControl 同款反悔手势；
+/// 太小会让正常横拖的抖动误判成取消，太大则永远反悔不了。
+private let TAB_DRAG_CANCEL_SLOP: CGFloat = 36
+
 struct QuickPanelView: View {
     @EnvironmentObject var clipboardManager: ClipboardManager
     @EnvironmentObject private var layoutState: QuickPanelLayoutState
@@ -104,8 +120,17 @@ struct QuickPanelView: View {
     @State private var userTypedSlash = false
     @State private var selectedItemIDs: Set<PersistentIdentifier> = []
     @State private var selectedFilter: QuickFilter = .all
-    /// 筛选标签玻璃的命名空间：选中块靠它在标签之间 morph。
-    @Namespace private var tabGlassNS
+    /// 各筛选标签在 tabBar 坐标系里的 frame，由子视图上报。滑块定位和拖拽命中都查它。
+    @State private var tabFrames: [QuickFilter: CGRect] = [:]
+    /// 拖拽中手指在 tabBar 坐标系里的 x。非 nil 即「正在拖」：滑块改为跟着这个值
+    /// 连续定位（可以停在两个标签中间），同时鼓大一圈。
+    ///
+    /// 拖的过程**不写回 store**——切一次筛选要重查 + 整棵列表重建，横扫过五个标签
+    /// 就是五次，所以跟 AppKit 的 NSSegmentedControl 一样：跟随只动视觉，松手才 commit。
+    @State private var tabDragX: CGFloat?
+    /// 按下时命中的标签。用来区分「原地点选中项」（= 取消筛选回到全部）和
+    /// 「从别处拖过来落在它上面」（= 正常选中），后者不该被当成 toggle。
+    @State private var tabDragOrigin: QuickFilter?
     /// 选中滑块的 tint 要按外观反向取：深色提亮、浅色压暗，才能从同为 .regular
     /// 的容器里分出来。
     @Environment(\.colorScheme) private var colorScheme
@@ -415,6 +440,10 @@ struct QuickPanelView: View {
             userTypedSlash = false
             userInteractedSinceShow = false
             isGridFocused = false
+            // 拖拽切标签的途中被 Esc / 失焦关掉面板时手势收不到 onEnded，
+            // 残留的拖拽位置会让下次打开滑块停在没被选中的标签上、还是鼓大的。
+            tabDragX = nil
+            tabDragOrigin = nil
             // 延后一小会儿再放开建议浮层，给 SwiftUI 一次 tick 把状态提交到渲染树，
             // 避免刚 orderFrontRegardless 时显示上一次的 `/` 建议面板。
             // 代价：打开 80ms 内如果立即输入 `/`，这一帧的建议不会渲染，
@@ -925,11 +954,25 @@ struct QuickPanelView: View {
                     GlassEffectContainer(spacing: 6) {
                         HStack(spacing: 2) {
                             ForEach(filterItems, id: \.filter) { item in
-                                glassTab(item.label, filter: item.filter)
+                                tabLabel(item.label, filter: item.filter)
                                     .id(item.filter)
                             }
                         }
+                        // 滑块必须在文字**下面**。曾经想学 iOS 26 tab bar「扫过时把底下
+                        // 文字透镜放大」，把它 overlay 到文字上——`.regular` 玻璃会模糊
+                        // 下方内容，结果是标签的字直接被糊没。iOS 那个效果是 UITabBar
+                        // 控件内部实现，`.glassEffect` 这个材质 API 给不了，别再试。
+                        // background 和 overlay 一样不参与布局，滑块鼓大不会撑开这一排。
+                        .background(alignment: .topLeading) { tabSlider }
+                        // 命中测试、滑块定位、手势坐标三者必须同一个原点，
+                        // 所以坐标系挂在 HStack 上（overlay 的 topLeading 也是这里）
+                        .coordinateSpace(name: TAB_STRIP_COORD_SPACE)
+                        .onPreferenceChange(TabFramesPreferenceKey.self) { tabFrames = $0 }
                         .padding(3)
+                        // 标签之间的 2pt 缝隙、外圈 3pt padding 都要能接住手指，
+                        // 否则横扫过缝隙时滑块会闪断一帧。
+                        .contentShape(Rectangle())
+                        .gesture(tabDragGesture)
                         // 整排再套一层玻璃做容器：未选中项是 .identity（不渲染玻璃），
                         // 少了这层整排就只剩文字浮在面板上、跟背景糊成一片。两层玻璃都在
                         // 同一个 GlassEffectContainer 里，系统会正确处理嵌套与融合。
@@ -967,43 +1010,183 @@ struct QuickPanelView: View {
         }
     }
 
-    /// 单个筛选标签。只有选中项挂 `.glassEffect`，配合 `.glassEffectID` 让那块玻璃
-    /// 在切换时于两个标签之间 liquid morph——形变和折射都是系统算的，这里只声明
-    /// 形状和归属。未选中项不挂玻璃，整排才不会变成 14 颗胶囊。
-    @available(macOS 26.0, *)
+    /// 文字该按选中样式画的那个标签。拖拽中跟着手指底下最近的标签走，平时等于真实筛选。
+    /// 注意它是**离散**的（整格跳），只管字重和颜色；滑块位置是另一套连续量。
+    private var highlightedTab: QuickFilter {
+        if let x = tabDragX, let hit = tabHit(atX: x) { return hit }
+        return selectedFilter
+    }
+
+    /// 单个筛选标签。这里只有文字——选中态那块玻璃是整排共用的一个滑块
+    /// （`tabSlider`），不再挂在标签自己身上：挂在标签上的 `.glassEffect` 只能在
+    /// 标签之间整格跳，做不到横扫时连续跟手。
+    ///
+    /// 字重随选中态变化是原本就有的效果，跨到滑块连续跟手之后才暴露出会带着整排
+    /// 重排，所以下面用隐形副本把宽度钉死。
+    ///
+    /// 也不用 Button：点击和拖拽由整排共用的 `tabDragGesture` 一手包办。Button 自带
+    /// 的手势在 SwiftUI 里优先级高于父级 `.gesture`，留着它会把
+    /// `DragGesture(minimumDistance: 0)` 的 onChanged 吃掉，拖拽永远不触发。
     @ViewBuilder
-    private func glassTab(_ label: String, filter: QuickFilter) -> some View {
-        let isActive = selectedFilter == filter
-        Button {
-            withAnimation(.snappy(duration: 0.28)) {
-                selectedFilter = isActive ? .all : filter
-                isSearchFocused = true
-            }
-        } label: {
+    private func tabLabel(_ label: String, filter: QuickFilter) -> some View {
+        let isActive = highlightedTab == filter
+        ZStack {
+            // 隐形的 .medium 副本负责撑宽度。字重随选中态变化本身会改变文字宽度，
+            // 横扫时每经过一个标签整排就重排一次，滑块跟着抖得很明显——宽度锁死
+            // 在最粗那一档，排版就和选中态解耦了。
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .hidden()
             Text(label)
                 .font(.system(size: 11, weight: isActive ? .medium : .regular))
                 // 未选中也走 primary，只降一点透明度：secondaryLabelColor 在玻璃上
                 // 太淡、一排标签读起来发灰。选中态靠字重 + 滑块玻璃区分就够了。
                 .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.75))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                // .plain 的 hit test 只覆盖 label 的不透明内容，Text 的 padding 是
-                // 透明的——不补这句就只有文字本身可点，边上一圈全是死区。
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        // 未选中必须是 .identity（完全不应用玻璃），不能是 .clear——.clear 是
-        // 「清玻璃」，照样渲染，写成它等于 14 个标签每个都在渲染玻璃。
-        // .interactive() 让选中那块玻璃跟着按压形变，是 Liquid Glass 的手感来源。
-        // tint 按外观反向取：容器和滑块同为 .regular，不加 tint 在深色下会被渲染成
-        // 相近亮度、滑块直接消失在容器里。
-        .glassEffect(
-            isActive
-                ? .regular.tint(sliderTint).interactive()
-                : .identity,
-            in: .capsule
-        )
-        .glassEffectID(filter, in: tabGlassNS)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        // Text 的 padding 是透明的，不补这句边上一圈就是死区
+        .contentShape(Rectangle())
+        // 把自己的位置报给整排，滑块定位和拖拽命中都查这张表
+        .background {
+            GeometryReader { geo in
+                Color.clear.preference(
+                    key: TabFramesPreferenceKey.self,
+                    value: [filter: geo.frame(in: .named(TAB_STRIP_COORD_SPACE))]
+                )
+            }
+        }
+        // 去掉 Button 后无障碍身份也跟着没了，手动补回按钮语义
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { commitTab(filter, wasOrigin: true) }
+    }
+
+    /// 选中滑块。整排只有这一块玻璃，位置/尺寸完全由状态算出来，
+    /// 所以拖拽时能停在两个标签中间的任意位置，而不是整格跳。
+    @available(macOS 26.0, *)
+    @ViewBuilder
+    private var tabSlider: some View {
+        if let base = tabSliderBaseFrame {
+            let dragging = tabDragX != nil
+            let w = base.width * (dragging ? Self.tabSliderGrowX : 1)
+            let h = base.height * (dragging ? Self.tabSliderGrowY : 1)
+            Color.clear
+                .frame(width: w, height: h)
+                // tint 按外观反向取：容器和滑块同为 .regular，不加 tint 在深色下会被
+                // 渲染成相近亮度、滑块直接消失在容器里。
+                .glassEffect(.regular.tint(sliderTint).interactive(), in: .capsule)
+                // 鼓大时保持中心不动，两边一起往外涨
+                .offset(x: base.midX - w / 2, y: base.midY - h / 2)
+                // 关键：动画只认 snapToken。拖拽中 token 恒定，位置逐帧变化直接落地
+                // ——加任何动画都会让滑块滞后于手指，就不跟手了。按下和松手时 token
+                // 变一次，鼓起/缩回和吸附到目标标签由同一条 spring 一起完成。
+                .animation(.spring(response: 0.3, dampingFraction: 0.78), value: tabSliderSnapToken)
+        }
+    }
+
+    /// 拖拽时滑块自身的膨胀倍率——只是这块玻璃变大，不放大底下的文字
+    /// （那是 UITabBar 的私有能力，见 `tabBar` 里的说明）。纵向这档恰好吃满容器的
+    /// 3pt 内边距，再大就会溢出横向 ScrollView 的内容高度、被裁掉上下两头。
+    private static let tabSliderGrowX: CGFloat = 1.06
+    private static let tabSliderGrowY: CGFloat = 1.20
+
+    /// 滑块动画的触发依据。拖拽中恒为 `(true, nil)`，手指怎么移都不触发动画；
+    /// 按下、松手、键盘切换会让它变一次，那一下才走 spring。
+    private struct TabSliderSnapToken: Equatable {
+        let dragging: Bool
+        let filter: QuickFilter?
+    }
+
+    private var tabSliderSnapToken: TabSliderSnapToken {
+        tabDragX != nil
+            ? TabSliderSnapToken(dragging: true, filter: nil)
+            : TabSliderSnapToken(dragging: false, filter: selectedFilter)
+    }
+
+    /// 这排标签按显示顺序排好的 frame。`tabFrames` 是字典、无序，
+    /// 插值和命中测试都得按屏幕上的左右顺序来。
+    private var orderedTabs: [(filter: QuickFilter, frame: CGRect)] {
+        filterItems.compactMap { item in tabFrames[item.filter].map { (item.filter, $0) } }
+    }
+
+    /// 滑块的目标位置与尺寸（不含拖拽膨胀）。拖拽中在相邻两个标签之间按手指位置
+    /// 连续插值：中心严格跟着手指，宽度在两个标签的宽度之间线性过渡——标签宽度
+    /// 不一（「全部」vs「AI Agent」差一倍），只挪位置不插宽度的话滑块扫到窄标签上
+    /// 会明显盖出去一截。
+    private var tabSliderBaseFrame: CGRect? {
+        let ordered = orderedTabs
+        guard let first = ordered.first, let last = ordered.last else { return nil }
+        guard let x = tabDragX else { return tabFrames[selectedFilter] }
+        guard ordered.count > 1 else { return first.frame }
+        // 钳在首末标签的中心之间：再往外滑块就该整块探出这一排了
+        let clamped = min(max(x, first.frame.midX), last.frame.midX)
+        let i = (0..<(ordered.count - 1)).first {
+            clamped >= ordered[$0].frame.midX && clamped <= ordered[$0 + 1].frame.midX
+        } ?? 0
+        let lo = ordered[i].frame, hi = ordered[i + 1].frame
+        let span = hi.midX - lo.midX
+        let t = span > 0 ? (clamped - lo.midX) / span : 0
+        let w = lo.width + (hi.width - lo.width) * t
+        return CGRect(x: clamped - w / 2, y: lo.minY, width: w, height: lo.height)
+    }
+
+    /// 整排共用的拖拽手势：`minimumDistance: 0` 让它同时承担「点一下」和
+    /// 「按住横扫」。扫的过程只更新滑块位置，松手才把筛选落到 store。
+    @available(macOS 26.0, *)
+    private var tabDragGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(TAB_STRIP_COORD_SPACE))
+            .onChanged { value in
+                // 纵向拉开够远 = 反悔，滑块弹回真实筛选，继续拖也不再跟随
+                guard isWithinTabStrip(value.location) else {
+                    tabDragX = nil
+                    return
+                }
+                if tabDragOrigin == nil { tabDragOrigin = tabHit(atX: value.location.x) }
+                tabDragX = value.location.x
+            }
+            .onEnded { value in
+                let origin = tabDragOrigin
+                tabDragOrigin = nil
+                guard isWithinTabStrip(value.location),
+                      let hit = tabHit(atX: value.location.x) else {
+                    // 反悔：滑块滑回真实筛选，不改数据
+                    tabDragX = nil
+                    return
+                }
+                commitTab(hit, wasOrigin: origin == hit)
+            }
+    }
+
+    /// 落地一次筛选切换。`wasOrigin` 表示手指按下和抬起都在同一个标签上——
+    /// 只有这种「原地点击」才保留「再点一下选中项 = 取消筛选」的老语义；
+    /// 从别处拖过来落在选中项上是普通选中，不能反手把人清回全部。
+    private func commitTab(_ filter: QuickFilter, wasOrigin: Bool) {
+        let target: QuickFilter = (wasOrigin && selectedFilter == filter) ? .all : filter
+        withAnimation(.snappy(duration: 0.28)) {
+            selectedFilter = target
+            // 必须和 selectedFilter 同一个事务里清掉：分两次写会让滑块先弹回旧位置
+            // 再滑到新位置，横扫到底松手时非常明显。
+            tabDragX = nil
+            isSearchFocused = true
+        }
+    }
+
+    /// 手指是否还在这排标签的纵向范围内（横向越界不算，见 `tabHit`）。
+    private func isWithinTabStrip(_ point: CGPoint) -> Bool {
+        guard let anyFrame = orderedTabs.first?.frame else { return false }
+        return point.y > anyFrame.minY - TAB_DRAG_CANCEL_SLOP
+            && point.y < anyFrame.maxY + TAB_DRAG_CANCEL_SLOP
+    }
+
+    /// 按 x 找标签。横向拖出两端不取消、而是钳到首/末个——一路扫到头是选第一个/
+    /// 最后一个的自然表达，在这儿判越界会让边上两个标签特别难选中。
+    private func tabHit(atX x: CGFloat) -> QuickFilter? {
+        let ordered = orderedTabs
+        guard let first = ordered.first, let last = ordered.last else { return nil }
+        if x <= first.frame.minX { return first.filter }
+        if x >= last.frame.maxX { return last.filter }
+        return ordered.first { x >= $0.frame.minX && x < $0.frame.maxX }?.filter ?? last.filter
     }
 
     private var availableGroupsForTab: [(name: String, icon: String, count: Int, preservesItems: Bool)] {
