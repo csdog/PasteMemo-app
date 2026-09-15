@@ -966,7 +966,9 @@ struct QuickPanelView: View {
         } label: {
             Text(label)
                 .font(.system(size: 11, weight: isActive ? .medium : .regular))
-                .foregroundStyle(isActive ? Color.primary : Color(nsColor: .secondaryLabelColor))
+                // 未选中也走 primary，只降一点透明度：secondaryLabelColor 在玻璃上
+                // 太淡、一排标签读起来发灰。选中态靠字重 + 滑块玻璃区分就够了。
+                .foregroundStyle(isActive ? Color.primary : Color.primary.opacity(0.75))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
                 // .plain 的 hit test 只覆盖 label 的不透明内容，Text 的 padding 是
@@ -1501,7 +1503,9 @@ struct QuickPanelView: View {
                 )
             Text(label)
                 .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+                // 说明文字是主信息，走 primary；键位标记退到 secondary 做层级
+                // （参考 Raycast 底栏：文字近黑、键帽偏灰）。之前 .tertiary 在玻璃上几乎看不清。
+                .foregroundStyle(.primary)
                 .lineLimit(1)
         }
         .fixedSize(horizontal: true, vertical: false)
