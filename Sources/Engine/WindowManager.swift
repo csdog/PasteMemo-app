@@ -15,6 +15,7 @@ final class WindowManager {
         styleMask: NSWindow.StyleMask = [.titled, .closable],
         frameAutosaveName: String? = nil,
         bridgeToolbar: Bool = false,
+        hidesTitle: Bool = false,
         autoResizesToContent: Bool = false,
         content: @escaping () -> Content,
         onClose: (() -> Void)? = nil
@@ -75,6 +76,12 @@ final class WindowManager {
                 // 的侧边栏靠它延伸到标题栏下实现通顶;手建 NSWindow 不补这个样式位,
                 // 侧边栏会从标题栏下方才开始,顶部断一截。
                 window.styleMask.insert(.fullSizeContentView)
+                if hidesTitle {
+                    // 标题和标题栏底色都去掉：红绿灯直接浮在侧边栏上，详情区从顶部
+                    // 起就是内容，没有那条带标题的分隔条（设置窗口用）。
+                    window.titleVisibility = .hidden
+                    window.titlebarAppearsTransparent = true
+                }
             }
             window.contentViewController = host
             // 必须先给初始尺寸再 center():autoResizesToContent 时 SwiftUI 首次布局

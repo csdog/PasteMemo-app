@@ -21,7 +21,7 @@ struct BackupSettingsSection: View {
     @State private var showRestoreConfirm = false
 
     var body: some View {
-        Section {
+        SettingsSection {
             backupToggle
             if backupEnabled {
                 frequencyPicker

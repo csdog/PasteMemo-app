@@ -4,35 +4,33 @@ import ServiceManagement
 import Carbon
 
 struct SettingsView: View {
-    @State private var selection: SettingsCategory? = .general
+    @State private var selection: SettingsCategory = .general
 
     var body: some View {
-        // NavigationSplitView 让侧边栏拿到系统原生质感(macOS 26 上即悬浮
-        // Liquid Glass)。窗口不再随内容自适应高度,改为固定尺寸+面板内滚动
-        // (Form(.grouped) 自带滚动),与系统设置一致。
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section {
-                    ForEach(SettingsCategory.functionGroup.filter(isVisible)) { sidebarRow($0) }
-                }
-                Section {
-                    ForEach(SettingsCategory.dataPrivacyGroup) { sidebarRow($0) }
-                }
-                Section {
-                    ForEach(SettingsCategory.aboutGroup) { sidebarRow($0) }
-                }
-            }
-            .navigationSplitViewColumnWidth(min: 170, ideal: 190, max: 230)
-        } detail: {
-            detailView(for: selection ?? .general)
+        // 自绘侧边栏 + 卡片式 Form（见 SettingsSidebar / SettingsCardStyle）。窗口固定
+        // 尺寸、面板内滚动（Form(.grouped) 自带滚动）。
+        HStack(spacing: 0) {
+            SettingsSidebar(
+                selection: $selection,
+                groups: [
+                    SettingsCategory.functionGroup.filter(isVisible),
+                    SettingsCategory.dataPrivacyGroup,
+                    SettingsCategory.aboutGroup,
+                ]
+            )
+            .frame(width: 200)
+
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(width: 1)
+                .ignoresSafeArea()
+
+            detailView(for: selection)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .textBackgroundColor).ignoresSafeArea())
         }
         .frame(minWidth: 700, minHeight: 460)
         .localized()
-    }
-
-    private func sidebarRow(_ category: SettingsCategory) -> some View {
-        Label(L10n.tr(category.titleKey), systemImage: category.icon)
-            .tag(category)
     }
 
     /// 自动化条目仅在启用时出现。
@@ -119,7 +117,7 @@ struct SMSCodeSettingsSection: View {
     @ObservedObject private var smsWatcher = SMSCodeWatcher.shared
 
     var body: some View {
-        Section {
+        SettingsSection {
             Toggle(L10n.tr("settings.smsCode.enabled"), isOn: $smsCodeEnabled)
                 .onChange(of: smsCodeEnabled) {
                     // 默认关闭;打开时才启动 watcher,由它检测完全磁盘访问权限
@@ -209,7 +207,7 @@ struct GeneralPane: View {
 
     var body: some View {
         Form {
-            Section(L10n.tr("settings.general")) {
+            SettingsSection(L10n.tr("settings.general")) {
                 Toggle(L10n.tr("settings.clipboardMonitoring"), isOn: $clipboardMonitoringEnabled)
                 Toggle(L10n.tr("settings.launchAtLogin"), isOn: $launchAtLogin)
                     .onChange(of: launchAtLogin) {
@@ -258,7 +256,7 @@ struct GeneralPane: View {
                 }
             }
 
-            Section(L10n.tr("settings.sound")) {
+            SettingsSection(L10n.tr("settings.sound")) {
                 Toggle(L10n.tr("settings.sound.enabled"), isOn: $soundEnabled)
                 if soundEnabled {
                     soundPicker(
@@ -272,7 +270,7 @@ struct GeneralPane: View {
                 }
             }
 
-            Section {
+            SettingsSection {
                 Button(L10n.tr("settings.showGuide")) {
                     showOnboardingWindow()
                 }
@@ -280,25 +278,25 @@ struct GeneralPane: View {
             }
 
             // 诊断:导出日志(issue #66,查清后移除)
-            Section(L10n.tr("settings.diagnostics")) {
+            SettingsSection(L10n.tr("settings.diagnostics")) {
                 Button((DiagnosticLog.isHealthy ? "" : "⚠️ ") + L10n.tr("settings.diagnostics.export")) {
                     DiagnosticLog.exportLog()
                 }
                 .pointerCursor()
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
     }
 
     private func soundPicker(label: String, selection: Binding<String>) -> some View {
         HStack {
             Picker(label, selection: selection) {
-                Section(L10n.tr("settings.sound.section.custom")) {
+                SettingsSection(L10n.tr("settings.sound.section.custom")) {
                     ForEach(SoundManager.CUSTOM_SOUNDS, id: \.storageKey) { source in
                         Text(source.displayName).tag(source.storageKey)
                     }
                 }
-                Section(L10n.tr("settings.sound.section.system")) {
+                SettingsSection(L10n.tr("settings.sound.section.system")) {
                     ForEach(SoundManager.SYSTEM_SOUNDS, id: \.storageKey) { source in
                         Text(source.displayName).tag(source.storageKey)
                     }
@@ -348,7 +346,7 @@ struct AppearancePane: View {
 
     var body: some View {
         Form {
-            Section(L10n.tr("settings.appearance")) {
+            SettingsSection(L10n.tr("settings.appearance")) {
                 Picker(L10n.tr("settings.theme"), selection: $appearanceMode) {
                     Text(L10n.tr("settings.theme.system")).tag("system")
                     Text(L10n.tr("settings.theme.light")).tag("light")
@@ -385,7 +383,7 @@ struct AppearancePane: View {
                 .help(L10n.tr("settings.menuBar.leftClickAction.help"))
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
     }
 }
 
@@ -398,7 +396,7 @@ struct DataTab: View {
             BackupSettingsSection()
             DataPorterSection()
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
     }
 }
 
@@ -423,7 +421,7 @@ struct ShortcutsTab: View {
         Form {
             // 按「快捷键作用的对象」分组：快捷面板 / 管理器窗口 / 接力。
             // 每组的提示文字紧跟所属条目，避免所有行挤在一个分区里读不出归属。
-            Section(L10n.tr("settings.shortcuts.section.quickPanel")) {
+            SettingsSection(L10n.tr("settings.shortcuts.section.quickPanel")) {
                 HStack {
                     Text(L10n.tr("settings.quickPanelShortcut"))
                     Spacer()
@@ -433,17 +431,11 @@ struct ShortcutsTab: View {
                             .font(.callout)
                     }
                     ShortcutRecorder(keyCode: $hotkeyKeyCode, modifiers: $hotkeyModifiers, onChanged: applyShortcut)
-                        .frame(width: 140, height: 24)
-                    Button {
+                    ShortcutClearButton {
                         hotkeyManager.clearShortcut()
                         hotkeyKeyCode = -1
                         hotkeyModifiers = -1
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
                 }
 
                 // 双击修饰键走 DoubleTapDetector → toggleQuickPanel，和上面的面板快捷键
@@ -464,7 +456,7 @@ struct ShortcutsTab: View {
                 }
             }
 
-            Section(L10n.tr("settings.shortcuts.section.manager")) {
+            SettingsSection(L10n.tr("settings.shortcuts.section.manager")) {
                 HStack {
                     Text(L10n.tr("settings.managerShortcut"))
                     Spacer()
@@ -487,17 +479,11 @@ struct ShortcutsTab: View {
                             }
                     }
                     ShortcutRecorder(keyCode: $managerKeyCode, modifiers: $managerModifiers, onChanged: applyManagerShortcut)
-                        .frame(width: 140, height: 24)
-                    Button {
+                    ShortcutClearButton {
                         hotkeyManager.clearManagerShortcut()
                         managerKeyCode = -1
                         managerModifiers = -1
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
                 }
 
                 Text(L10n.tr("settings.managerShortcut.scopeHint"))
@@ -505,7 +491,7 @@ struct ShortcutsTab: View {
                     .foregroundStyle(.tertiary)
             }
 
-            Section(L10n.tr("settings.shortcuts.section.relay")) {
+            SettingsSection(L10n.tr("settings.shortcuts.section.relay")) {
                 HStack {
                     Text(L10n.tr("settings.relayShortcut"))
                     Spacer()
@@ -515,17 +501,11 @@ struct ShortcutsTab: View {
                             .font(.callout)
                     }
                     ShortcutRecorder(keyCode: $relayKeyCode, modifiers: $relayModifiers, onChanged: applyRelayShortcut)
-                        .frame(width: 140, height: 24)
-                    Button {
+                    ShortcutClearButton {
                         hotkeyManager.clearRelayShortcut()
                         relayKeyCode = -1
                         relayModifiers = -1
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
-                    .pointerCursor()
                 }
 
                 // 接力粘贴快捷键（接力浮窗内逐条粘贴用，默认 ⌃V）。RelayHotkeyHandler 在
@@ -534,7 +514,6 @@ struct ShortcutsTab: View {
                     Text(L10n.tr("relay.settings.pasteKey"))
                     Spacer()
                     ShortcutRecorder(keyCode: $relayPasteKeyCode, modifiers: $relayPasteModifiers)
-                        .frame(width: 140, height: 24)
                         .disabled(relayManager.isActive && !relayManager.isPaused)
                 }
                 Text(relayManager.isActive && !relayManager.isPaused
@@ -544,7 +523,7 @@ struct ShortcutsTab: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
     }
 
     private func applyShortcut() {
@@ -585,7 +564,7 @@ struct QuickPanelPane: View {
 
     var body: some View {
         Form {
-            Section(L10n.tr("settings.display")) {
+            SettingsSection(L10n.tr("settings.display")) {
                 Picker(L10n.tr("settings.quickPanelSecondaryRow"), selection: $quickPanelSecondaryRow) {
                     ForEach(QuickPanelSecondaryRow.allCases, id: \.rawValue) { option in
                         Text(L10n.tr(option.titleKey)).tag(option.rawValue)
@@ -667,7 +646,7 @@ struct QuickPanelPane: View {
             // 独立 Section 而不是 DisclosureGroup：后者把十几个 Toggle 挤成一坨、
             // 行高和缩进都跟其它设置项对不齐。Section 的 header/footer 是 Form 的
             // 标准结构，跟这一页其它分节自然一致。
-            Section {
+            SettingsSection {
                 ForEach(ClipContentType.visibleCases, id: \.self) { type in
                     Toggle(isOn: tabTypeVisibleBinding(type)) {
                         Label(type.label, systemImage: type.icon)
@@ -680,14 +659,14 @@ struct QuickPanelPane: View {
                 Text(L10n.tr("settings.quickPanelTabTypes.hint"))
             }
 
-            Section(L10n.tr("settings.behavior")) {
+            SettingsSection(L10n.tr("settings.behavior")) {
                 Toggle(L10n.tr("settings.autoPaste"), isOn: $quickPanelAutoPaste)
                 Toggle(L10n.tr("settings.addNewLine"), isOn: $addNewLineAfterPaste)
                 Toggle(L10n.tr("settings.quickPanelLaunchAnimation"), isOn: $quickPanelLaunchAnimationEnabled)
                 Toggle(L10n.tr("settings.quickPanelRememberFilter"), isOn: $quickPanelRememberLastFilter)
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
         .onAppear {
             ensureSpecifiedScreenSelection()
         }
@@ -790,7 +769,7 @@ struct PreviewPane: View {
 
     var body: some View {
         Form {
-            Section {
+            SettingsSection {
                 Toggle(L10n.tr("settings.showLinkURL"), isOn: $showLinkURL)
                 Toggle(L10n.tr("settings.webPreview"), isOn: $webPreviewEnabled)
                 // 「预览时执行网页脚本」依赖「网页预览」开启,两者有联动,紧挨着放。
@@ -811,7 +790,7 @@ struct PreviewPane: View {
 
             SMSCodeSettingsSection()
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
     }
 }
 
@@ -825,7 +804,7 @@ struct HistorySettingsSection: View {
     private let allRetentionOptions = [1, 3, 7, 14, 30, 60, 90, 180, 365]
 
     var body: some View {
-        Section(L10n.tr("settings.history")) {
+        SettingsSection(L10n.tr("settings.history")) {
             Picker(L10n.tr("settings.retentionDays"), selection: $retentionDays) {
                 Text(L10n.tr("settings.retentionDays.forever")).tag(0)
                 ForEach(allRetentionOptions, id: \.self) { days in
@@ -902,7 +881,7 @@ struct OCRSettingsSection: View {
     @ObservedObject private var coordinator = OCRTaskCoordinator.shared
 
     var body: some View {
-        Section(L10n.tr("settings.ocr")) {
+        SettingsSection(L10n.tr("settings.ocr")) {
             Toggle(L10n.tr("settings.ocr.enable"), isOn: $ocrEnabled)
 
             // Layout-aware Markdown OCR relies on RecognizeDocumentsRequest,
@@ -962,14 +941,14 @@ struct PrivacyTab: View {
 
     var body: some View {
         Form {
-            Section {
+            SettingsSection {
                 Toggle(L10n.tr("settings.privacy.offlineMode"), isOn: $offlineModeEnabled)
                 Text(L10n.tr("settings.privacy.offlineMode.hint"))
                     .font(.callout)
                     .foregroundStyle(.tertiary)
             }
 
-            Section(L10n.tr("settings.privacy.sensitive")) {
+            SettingsSection(L10n.tr("settings.privacy.sensitive")) {
                 Toggle(L10n.tr("settings.privacy.sensitiveDetection"), isOn: $isSensitiveDetectionEnabled)
                 Text(L10n.tr("settings.privacy.sensitiveHint"))
                     .font(.callout)
@@ -978,7 +957,7 @@ struct PrivacyTab: View {
 
             IgnoredAppsSection()
 
-            Section(L10n.tr("settings.privacy.analytics")) {
+            SettingsSection(L10n.tr("settings.privacy.analytics")) {
                 Toggle(L10n.tr("settings.privacy.analyticsToggle"), isOn: $analyticsEnabled)
                     .disabled(offlineModeEnabled)
                 Text(L10n.tr("settings.privacy.analyticsHint"))
@@ -986,7 +965,7 @@ struct PrivacyTab: View {
                     .foregroundStyle(.tertiary)
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
     }
 }
 
@@ -1002,17 +981,17 @@ struct AutomationTab: View {
         Form {
             automationContent
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
         .scrollDisabled(true)
     }
 
     private var automationContent: some View {
         Group {
-            Section {
+            SettingsSection {
                 Toggle(L10n.tr("settings.automation.enabled"), isOn: $automationEnabled)
             }
 
-            Section(L10n.tr("settings.automation.ruleCount", rules.count, enabledCount)) {
+            SettingsSection(L10n.tr("settings.automation.ruleCount", rules.count, enabledCount)) {
                 ForEach(rules) { rule in
                     Toggle(isOn: Binding(
                         get: { rule.enabled },
@@ -1031,7 +1010,7 @@ struct AutomationTab: View {
                 }
             }
 
-            Section {
+            SettingsSection {
                 Button(L10n.tr("settings.automation.manage")) {
                     AutomationManagerWindow.show()
                 }
@@ -1051,7 +1030,7 @@ struct AutomationTab: View {
 struct SponsorTab: View {
     var body: some View {
         Form {
-            Section {
+            SettingsSection {
                 VStack(spacing: 12) {
                     Image(systemName: "heart.circle.fill")
                         .font(.system(size: 40))
@@ -1069,7 +1048,7 @@ struct SponsorTab: View {
                 .padding(.vertical, 8)
             }
 
-            Section {
+            SettingsSection {
                 Link(destination: URL(string: "https://www.lifedever.com")!) {
                     Label(L10n.tr("sponsor.donate"), systemImage: "cup.and.saucer")
                 }
@@ -1081,7 +1060,7 @@ struct SponsorTab: View {
                 }
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
         .scrollDisabled(true)
     }
 }
@@ -1096,7 +1075,7 @@ struct AboutTab: View {
 
     var body: some View {
         Form {
-            Section {
+            SettingsSection {
                 VStack(spacing: 12) {
                     if let icon = NSApp.applicationIconImage {
                         Image(nsImage: icon)
@@ -1113,7 +1092,7 @@ struct AboutTab: View {
                 .padding(.vertical, 8)
             }
 
-            Section {
+            SettingsSection {
                 HStack {
                     Text(L10n.tr("settings.currentVersion"))
                     Spacer()
@@ -1158,13 +1137,13 @@ struct AboutTab: View {
                 }
             }
 
-            Section {
+            SettingsSection {
                 Link(L10n.tr("about.website"), destination: URL(string: "https://www.lifedever.com/PasteMemo/")!)
                 Link(L10n.tr("about.help"), destination: URL(string: "https://www.lifedever.com/PasteMemo/help/")!)
                 Link(L10n.tr("menu.reportIssue"), destination: URL(string: "https://github.com/lifedever/PasteMemo-app/issues")!)
             }
 
-            Section {
+            SettingsSection {
                 HStack {
                     Text(L10n.tr("about.license"))
                     Spacer()
@@ -1174,14 +1153,14 @@ struct AboutTab: View {
                 Link(L10n.tr("about.sourceCode"), destination: URL(string: "https://github.com/lifedever/PasteMemo-app")!)
             }
 
-            Section {
+            SettingsSection {
                 Text("© 2026 lifedever.")
                     .foregroundStyle(.tertiary)
                     .font(.caption)
                     .frame(maxWidth: .infinity, alignment: .center)
             }
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
         .scrollDisabled(true)
     }
 }

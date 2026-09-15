@@ -12,7 +12,7 @@ struct AIAgentIntegrationView: View {
     var body: some View {
         Form {
             if !mcpProxyBinaryExists {
-                Section {
+                SettingsSection {
                     Label {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(L10n.tr("settings.aiAgents.binaryMissing"))
@@ -32,7 +32,7 @@ struct AIAgentIntegrationView: View {
             }
 
             // 总开关。issue #50
-            Section {
+            SettingsSection {
                 Toggle(isOn: $mcpEnabled) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L10n.tr("settings.aiAgents.master.toggle"))
@@ -51,7 +51,7 @@ struct AIAgentIntegrationView: View {
             }
 
             if mcpEnabled {
-                Section(L10n.tr("settings.aiAgents.service")) {
+                SettingsSection(L10n.tr("settings.aiAgents.service")) {
                     HStack {
                         Circle().fill(.green).frame(width: 8, height: 8)
                         Text(L10n.tr("settings.aiAgents.serverRunning"))
@@ -61,7 +61,7 @@ struct AIAgentIntegrationView: View {
                     }
                 }
 
-                Section(L10n.tr("settings.aiAgents.agents")) {
+                SettingsSection(L10n.tr("settings.aiAgents.agents")) {
                     ForEach(MCPAgentRegistry.all, id: \.id) { agent in
                         AgentRow(agent: agent,
                                  installed: agentStates[agent.id] ?? false,
@@ -72,13 +72,13 @@ struct AIAgentIntegrationView: View {
                     }
                 }
 
-                Section(L10n.tr("settings.aiAgents.privacy")) {
+                SettingsSection(L10n.tr("settings.aiAgents.privacy")) {
                     Toggle(L10n.tr("settings.aiAgents.allowSensitive"), isOn: $allowSensitive)
                 }
 
                 MCPSourceAppBlocklistSection()
             } else {
-                Section {
+                SettingsSection {
                     Text(L10n.tr("settings.aiAgents.master.disabledHint"))
                         .foregroundStyle(.secondary)
                         .font(.callout)
@@ -87,7 +87,7 @@ struct AIAgentIntegrationView: View {
             }
 
         }
-        .formStyle(.grouped)
+        .settingsFormStyle()
         .onAppear { refreshStates() }
     }
 
@@ -276,7 +276,7 @@ struct MCPSourceAppBlocklistSection: View {
     @State private var isShowingAppPicker = false
 
     var body: some View {
-        Section {
+        SettingsSection {
             sectionContent
         } header: {
             Text(L10n.tr("settings.aiAgents.sourceBlocklist"))
@@ -372,7 +372,7 @@ private struct MCPAppPickerSheet: View {
 
     private var runningAppsList: some View {
         List {
-            Section(L10n.tr("settings.ignoredApps.running")) {
+            SettingsSection(L10n.tr("settings.ignoredApps.running")) {
                 ForEach(Array(runningApps.enumerated()), id: \.element.bundleID) { _, app in
                     let bid = app.bundleID
                     let isSelected = selectedBundleIDs.contains(bid)
