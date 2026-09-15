@@ -38,8 +38,7 @@ func showSettingsWindowAppKit() {
         frameAutosaveName: "SettingsWindow",
         // NavigationSplitView 侧边栏通顶需要 fullSizeContentView(同主管理器/
         // 自动化窗口),窗口不再随内容自适应高度,面板内容自行滚动。
-        bridgeToolbar: true,
-        hidesTitle: true
+        bridgeToolbar: true
     ) {
         SettingsView()
             .environmentObject(ClipboardManager.shared)

@@ -22,7 +22,7 @@ struct DataPorterSection: View {
     @State private var showClearMenu = false
 
     var body: some View {
-        SettingsSection(L10n.tr("dataPorter.section")) {
+        Section(L10n.tr("dataPorter.section")) {
             exportControls
         }
     }

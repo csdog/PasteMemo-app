@@ -24,13 +24,13 @@ struct ShortcutRecorder: View {
             isRecording ? stopRecording() : startRecording()
         } label: {
             Text(displayText)
-                .font(.system(size: 13, weight: hasShortcut || isRecording ? .medium : .regular))
+                .font(.system(size: 12, weight: hasShortcut || isRecording ? .medium : .regular))
                 .foregroundStyle(textStyle)
                 .lineLimit(1)
-                .padding(.horizontal, 12)
-                .frame(minWidth: 80, maxWidth: .infinity, minHeight: 28, maxHeight: 28)
-                .background(Color.primary.opacity(isRecording ? 0.12 : 0.08), in: RoundedRectangle(cornerRadius: 9))
-                .contentShape(RoundedRectangle(cornerRadius: 9))
+                .padding(.horizontal, 10)
+                .frame(minWidth: 64, maxWidth: .infinity, minHeight: 24, maxHeight: 24)
+                .background(Color.primary.opacity(isRecording ? 0.12 : 0.08), in: RoundedRectangle(cornerRadius: 7))
+                .contentShape(RoundedRectangle(cornerRadius: 7))
         }
         .buttonStyle(.plain)
         .pointerCursor()
@@ -95,9 +95,9 @@ struct ShortcutClearButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: "xmark")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.primary)
-                .frame(width: 28, height: 28)
+                .frame(width: 24, height: 24)
                 .background(Color.primary.opacity(0.08), in: Circle())
                 .contentShape(Circle())
         }

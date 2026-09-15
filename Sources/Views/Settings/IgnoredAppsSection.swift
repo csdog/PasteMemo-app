@@ -6,7 +6,7 @@ struct IgnoredAppsSection: View {
     @State private var isShowingAppPicker = false
 
     var body: some View {
-        SettingsSection {
+        Section {
             sectionContent
         } header: {
             Text(L10n.tr("settings.ignoredApps"))
@@ -102,7 +102,7 @@ private struct AppPickerSheet: View {
 
     private var runningAppsList: some View {
         List {
-            SettingsSection(L10n.tr("settings.ignoredApps.running")) {
+            Section(L10n.tr("settings.ignoredApps.running")) {
                 ForEach(Array(runningApps.enumerated()), id: \.element.bundleID) { _, app in
                     let bid = app.bundleID
                     let isSelected = selectedBundleIDs.contains(bid)
