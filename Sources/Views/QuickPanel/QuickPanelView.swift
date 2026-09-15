@@ -316,7 +316,6 @@ struct QuickPanelView: View {
             searchBar
             // 标签条排除背景拖拽：否则点分类标签时窗口跟着微拖「晃动」
             NonDraggableArea { tabBar }
-            Divider().opacity(0.3)
             if filteredItems.isEmpty {
                 emptyStateView
             } else if isImageGridActive {
@@ -838,10 +837,22 @@ struct QuickPanelView: View {
                     .transition(.identity)
             }
 
-            TextField(L10n.tr("quick.search"), text: $searchText)
+            // placeholder 自己画，不交给 NSTextField：它有焦点时由 field editor 绘制、
+            // 失焦后换回 cell 绘制，两者基线差约 1pt，⌘K 一失焦 placeholder 就往下挪一下。
+            // SwiftUI Text 不随焦点换绘制器，位置固定。
+            TextField("", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .focused($isSearchFocused)
+                .overlay(alignment: .leading) {
+                    if searchText.isEmpty {
+                        Text(L10n.tr("quick.search"))
+                            .font(.system(size: 16))
+                            .foregroundStyle(Color(nsColor: .placeholderTextColor))
+                            .lineLimit(1)
+                            .allowsHitTesting(false)
+                    }
+                }
 
             if !searchText.isEmpty || pill != nil {
                 Button {
@@ -861,13 +872,17 @@ struct QuickPanelView: View {
                 QuickPanelWindowController.shared.isPinned = isPanelPinned
             } label: {
                 Image(systemName: isPanelPinned ? "pin.fill" : "pin")
-                    .font(.system(size: 12))
+                    // 13pt medium：和旁边 12pt medium 的计数数字视觉重量对齐，
+                    // 12pt regular 的线条在同款灰底里显得比数字轻
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(
                         isPanelPinned ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(HierarchicalShapeStyle.tertiary)
                     )
                     .frame(width: 28, height: 24)
+                    // 未固定时也给和右侧计数胶囊同样的灰底：两者高度一样、只有
+                    // 一个有底色时 pin 显得孤零零，读不成一组右侧工具
                     .background(
-                        isPanelPinned ? AnyShapeStyle(Color.accentColor.opacity(0.15)) : AnyShapeStyle(Color.clear),
+                        isPanelPinned ? AnyShapeStyle(Color.accentColor.opacity(0.15)) : AnyShapeStyle(Color.primary.opacity(0.05)),
                         in: RoundedRectangle(cornerRadius: 5)
                     )
                     .contentShape(Rectangle())
@@ -923,7 +938,8 @@ struct QuickPanelView: View {
                         .modifier(GlassSurface(shape: Capsule()))
                     }
                     .padding(.horizontal, 18)
-                    .padding(.bottom, 8)
+                    // 12 让胶囊悬在搜索行和列表正中间；8 时贴列表太近
+                    .padding(.bottom, 12)
                     // 放得下时撑到可视宽度并居中；放不下时 minWidth 不起作用，
                     // 内容保持实际宽度、恢复可滚动。少了这句就永远贴左，右边空一片。
                     .frame(minWidth: layoutState.width, alignment: .center)
@@ -947,7 +963,7 @@ struct QuickPanelView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .padding(.horizontal, 18)
-            .padding(.bottom, 8)
+            .padding(.bottom, 12)
         }
     }
 
