@@ -1121,16 +1121,8 @@ struct MainWindowView: View {
         guard let group = try? modelContext.fetch(descriptor).first else { return }
         let oldName = group.name
         AppMenuActions.showEditGroupAlert(group: group, context: modelContext)
-        // Update ClipItem.groupName if name changed
-        if group.name != oldName {
-            let itemDescriptor = FetchDescriptor<ClipItem>(predicate: #Predicate { $0.groupName == oldName })
-            if let items = try? modelContext.fetch(itemDescriptor) {
-                for item in items { item.groupName = group.name }
-            }
-            ClipItemStore.saveAndNotify(modelContext)
-            if selectedFilter == .group(oldName) {
-                selectedFilter = .group(group.name)
-            }
+        if selectedFilter == .group(oldName), group.name != oldName {
+            selectedFilter = .group(group.name)
         }
     }
 
@@ -1600,14 +1592,12 @@ struct GroupDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         guard dragging != nil else { return false }
         dragging = nil
-        // Persist new sort order to SmartGroup table
         let descriptor = FetchDescriptor<SmartGroup>(sortBy: [SortDescriptor(\.sortOrder)])
-        guard let groups = try? modelContext.fetch(descriptor) else { return true }
-        let currentOrder = store.sidebarCounts.byGroup.map(\.name)
-        for (idx, name) in currentOrder.enumerated() {
-            groups.first { $0.name == name }?.sortOrder = idx
+        guard let stored = try? modelContext.fetch(descriptor) else { return true }
+        let ordered = store.sidebarCounts.byGroup.compactMap { row in
+            stored.first { $0.name == row.name }
         }
-        ClipItemStore.saveAndNotify(modelContext)
+        AppMenuActions.persistGroupSortOrder(ordered, context: modelContext)
         return true
     }
 

@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import Quartz
 
-/// tabBar 的主过滤维度：所有模式共用 pinned/aiAgent/all；类型模式下追加 .type，分组模式下追加 .group
+/// tabBar 的主过滤维度：置顶 / 全部 / 类型 / 分组 / AI，顺序由设置里的标签栏分类决定。
 private enum QuickFilter: Equatable, Hashable {
     case all
     case pinned
@@ -137,6 +137,9 @@ struct QuickPanelView: View {
     @State private var keyMonitor: Any?
     @State private var flagsMonitor: Any?
     @FocusState private var isSearchFocused: Bool
+    /// 输入法组字时 SwiftUI 的 `searchText` 仍是空的，但 field editor 已有 marked text。
+    /// 用来把自定义 placeholder 藏起来，避免盖在拼音上。
+    @State private var isIMEComposing = false
     @State private var lastNavigatedID: PersistentIdentifier?
     @State private var selectionAnchor: PersistentIdentifier?
     @State private var showAllShortcuts = false
@@ -166,6 +169,7 @@ struct QuickPanelView: View {
     @AppStorage(QuickPanelSettings.lastFilterKey) private var lastFilterStorage = "all"
     @AppStorage(QuickPanelSettings.imageLayoutKey) private var imageLayoutRaw = QuickPanelImageLayout.list.rawValue
     @AppStorage(QuickPanelSettings.hiddenTabTypesKey) private var hiddenTabTypesRaw = ""
+    @AppStorage(QuickPanelSettings.tabOrderKey) private var tabOrderRaw = ""
     @AppStorage(QuickPanelSettings.imageGridDensityKey) private var imageGridDensityRaw = QuickPanelImageGridDensity.medium.rawValue
 
     private var secondaryRow: QuickPanelSecondaryRow {
@@ -350,7 +354,10 @@ struct QuickPanelView: View {
         VStack(spacing: 0) {
             searchBar
             // 标签条排除背景拖拽：否则点分类标签时窗口跟着微拖「晃动」
-            NonDraggableArea { tabBar }
+            // 设置里分类全关时整排卸掉，避免空胶囊还占一截高度。
+            if shouldShowTabBar {
+                NonDraggableArea { tabBar }
+            }
             if filteredItems.isEmpty {
                 emptyStateView
             } else if isImageGridActive {
@@ -424,6 +431,7 @@ struct QuickPanelView: View {
             showCommandPalette = false
             suggestionsArmed = false
             userTypedSlash = false
+            isIMEComposing = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .quickPanelPinnedResignKey)) { _ in
             // Pinned + user clicked another app: release search focus so the text field
@@ -493,7 +501,18 @@ struct QuickPanelView: View {
             targetApp = QuickPanelWindowController.shared.previousApp
             isSearchFocused = true
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSText.didChangeNotification)) { _ in
+            refreshIMEComposing()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSTextView.didChangeSelectionNotification)) { _ in
+            refreshIMEComposing()
+        }
         .onChange(of: searchText) {
+            if !searchText.isEmpty {
+                isIMEComposing = false
+            } else {
+                refreshIMEComposing()
+            }
             if pill != nil {
                 // Pill is active — search text is just keyword within the pill's scope
                 store.searchText = searchText
@@ -713,6 +732,7 @@ struct QuickPanelView: View {
                         }
                     )
                 }
+                .hideScrollerTrack()
                 .frame(height: min(suggestionsContentHeight, Self.suggestionsMaxHeight))
                 .onPreferenceChange(SuggestionsHeightKey.self) { suggestionsContentHeight = $0 }
                 .onChange(of: groupSuggestionIndex) {
@@ -846,22 +866,34 @@ struct QuickPanelView: View {
         scrollResetToken = UUID()
     }
 
-    /// 打开面板时计算要恢复的 tab 主筛选：开关关 → `.all`；开关开 → 解码并对当前上下文
-    /// 校验（维度匹配、组/类型仍存在），任何不匹配都退回 `.all`。
+    /// 打开面板时计算要恢复的 tab 主筛选：开关关 → 第一个可见 tab；开关开 → 解码并对当前上下文
+    /// 校验（维度匹配、组/类型仍存在），任何不匹配都退回第一个可见 tab。
     /// 用缓存的 sidebarCounts 校验（命中常见的"上次开/关之间数据没变"场景）；
-    /// 若数据在关闭期间变了导致缓存过期，由调用方的 `totalCount == 0` 兜底再退回 `.all`。
+    /// 若数据在关闭期间变了导致缓存过期，由调用方的 `totalCount == 0` 兜底再退回可见 tab。
     private func restoredFilterOnShow() -> QuickFilter {
-        guard rememberLastFilter, let stored = QuickFilter(storageString: lastFilterStorage) else { return .all }
-        switch stored {
-        case .all, .pinned:
-            return stored
-        case .aiAgent:
-            return store.sidebarCounts.aiAgent > 0 ? .aiAgent : .all
-        case .type(let t):
-            return (secondaryRow == .types && availableContentTypes.contains(t)) ? .type(t) : .all
-        case .group(let name):
-            return (secondaryRow == .groups && availableGroupsForTab.contains { $0.name == name }) ? .group(name) : .all
+        guard rememberLastFilter, let stored = QuickFilter(storageString: lastFilterStorage) else {
+            return firstVisibleTabFilter
         }
+        switch stored {
+        case .all:
+            return resolvedVisibleFilter(.all)
+        case .pinned:
+            return resolvedVisibleFilter(.pinned)
+        case .aiAgent:
+            return store.sidebarCounts.aiAgent > 0 ? .aiAgent : firstVisibleTabFilter
+        case .type(let t):
+            return (secondaryRow == .types && availableContentTypes.contains(t)) ? .type(t) : firstVisibleTabFilter
+        case .group(let name):
+            return (secondaryRow == .groups && availableGroupsForTab.contains { $0.name == name }) ? .group(name) : firstVisibleTabFilter
+        }
+    }
+
+    private var firstVisibleTabFilter: QuickFilter {
+        filterItems.first?.filter ?? .all
+    }
+
+    private func resolvedVisibleFilter(_ preferred: QuickFilter) -> QuickFilter {
+        filterItems.contains(where: { $0.filter == preferred }) ? preferred : firstVisibleTabFilter
     }
 
     private var searchBar: some View {
@@ -884,7 +916,7 @@ struct QuickPanelView: View {
                 .font(.system(size: 16))
                 .focused($isSearchFocused)
                 .overlay(alignment: .leading) {
-                    if searchText.isEmpty {
+                    if searchText.isEmpty && !isIMEComposing {
                         Text(L10n.tr("quick.search"))
                             .font(.system(size: 16))
                             .foregroundStyle(Color(nsColor: .placeholderTextColor))
@@ -1209,16 +1241,32 @@ struct QuickPanelView: View {
         colorScheme == .dark ? Color.white.opacity(0.14) : Color.black.opacity(0.07)
     }
 
+    /// 设置里至少还开着一个分类（置顶 / 全部 / 类型），才保留标签栏。
+    /// 全关时分组和 AI 也不再单独撑起这一排。
+    private var shouldShowTabBar: Bool {
+        QuickPanelSettings.resolvedTabItems(from: tabOrderRaw).contains { isTabVisible($0) }
+    }
+
     /// tabBar 的全部分段项，按显示顺序拍平成一个数组。分隔线要判断相邻关系
     /// （选中项两侧不画线），散成 5 个独立调用点就拿不到「下一项是谁」。
     private var filterItems: [(filter: QuickFilter, label: String)] {
-        var items: [(filter: QuickFilter, label: String)] = [
-            (.pinned, L10n.tr("filter.pinned")),
-            (.all, L10n.tr("filter.all")),
-        ]
-        if secondaryRow == .types {
-            items += availableContentTypes.map { (QuickFilter.type($0), $0.label) }
-        } else {
+        var items: [(filter: QuickFilter, label: String)] = []
+        for item in QuickPanelSettings.resolvedTabItems(from: tabOrderRaw) {
+            switch item {
+            case .pinned:
+                if isTabVisible(.pinned) {
+                    items.append((.pinned, item.label))
+                }
+            case .all:
+                if isTabVisible(.all) {
+                    items.append((.all, item.label))
+                }
+            case .type(let type):
+                guard secondaryRow == .types, availableContentTypes.contains(type) else { continue }
+                items.append((.type(type), type.label))
+            }
+        }
+        if secondaryRow == .groups {
             items += availableGroupsForTab.map { (QuickFilter.group($0.name), $0.name) }
         }
         if store.sidebarCounts.aiAgent > 0 {
@@ -1301,7 +1349,8 @@ struct QuickPanelView: View {
                 // 两条路径会在同一轮里先后定位，必有一条读到旧坐标并覆盖掉另一条。
                 CommandPalettePanel.shared.updateAnchor(row: row, list: list)
                 if showCommandPalette { syncCommandPalettePanel() }
-            }
+            },
+            hidesScrollerTrack: true
         )
         // 过滤条件切换时需要整棵列表重建，避免旧的 NSTableView 选择/滚动状态残留。
         .id(scrollResetToken)
@@ -1882,8 +1931,10 @@ struct QuickPanelView: View {
             OptionKeyMonitor.shared.isOptionPressed = event.modifierFlags.contains(.option)
             return event
         }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
             guard HotkeyManager.shared.isQuickPanelVisible else { return event }
+            DispatchQueue.main.async { refreshIMEComposing() }
+            guard event.type == .keyDown else { return event }
             userInteractedSinceShow = true
             let hasShift = event.modifierFlags.contains(.shift)
             let hasCmd = event.modifierFlags.contains(.command)
@@ -2146,45 +2197,22 @@ struct QuickPanelView: View {
     /// 标签栏里实际显示的类型：在「有内容 + 有权限」的基础上，再去掉用户在设置里
     /// 隐藏的。用 @AppStorage 读是为了配置一改标签栏立刻重算，不用另铺通知。
     private var availableContentTypes: [ClipContentType] {
-        guard !hiddenTabTypesRaw.isEmpty else { return store.availableTypes }
-        let hidden = Set(hiddenTabTypesRaw.split(separator: ",").map(String.init))
+        let hidden = QuickPanelSettings.hiddenTabIDs(from: hiddenTabTypesRaw)
         return store.availableTypes.filter { !hidden.contains($0.rawValue) }
     }
 
-    private func switchType(_ delta: Int) {
-        if secondaryRow == .types {
-            switchTypeFilter(delta)
-        } else {
-            switchGroupFilter(delta)
-        }
+    private func isTabVisible(_ item: QuickPanelTabItem) -> Bool {
+        !QuickPanelSettings.hiddenTabIDs(from: hiddenTabTypesRaw).contains(item.storageID)
     }
 
-    private func switchTypeFilter(_ delta: Int) {
-        let types = availableContentTypes
-        var allFilters: [QuickFilter] = [.pinned, .all]
-        allFilters.append(contentsOf: types.map { .type($0) })
-        if store.sidebarCounts.aiAgent > 0 { allFilters.append(.aiAgent) }
-
+    private func switchType(_ delta: Int) {
+        let allFilters = filterItems.map(\.filter)
+        guard !allFilters.isEmpty else { return }
         if let idx = allFilters.firstIndex(of: selectedFilter) {
             let newIdx = (idx + delta + allFilters.count) % allFilters.count
             selectedFilter = allFilters[newIdx]
         } else {
             selectedFilter = delta > 0 ? allFilters.first! : allFilters.last!
-        }
-    }
-
-    private func switchGroupFilter(_ delta: Int) {
-        let groups = availableGroupsForTab
-        // tabBar 顺序：[.pinned, .all, .group(g1), .group(g2), ..., .aiAgent?]
-        var all: [QuickFilter] = [.pinned, .all]
-        all.append(contentsOf: groups.map { .group($0.name) })
-        if store.sidebarCounts.aiAgent > 0 { all.append(.aiAgent) }
-
-        if let idx = all.firstIndex(of: selectedFilter) {
-            let newIdx = (idx + delta + all.count) % all.count
-            selectedFilter = all[newIdx]
-        } else {
-            selectedFilter = delta > 0 ? all.first! : all.last!
         }
     }
 
@@ -2318,6 +2346,13 @@ struct QuickPanelView: View {
             $0.triggerMode == .manual && $0.matches(item: item)
         }
         return Array(filtered.prefix(5))
+    }
+
+    private func refreshIMEComposing() {
+        let composing = (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() ?? false
+        if composing != isIMEComposing {
+            isIMEComposing = composing
+        }
     }
 
     private func removeKeyMonitor() {

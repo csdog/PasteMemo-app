@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // AppKit 系统 tooltip 默认约 1s。只影响本 App，单位毫秒。
+        UserDefaults.standard.set(200, forKey: "NSInitialToolTipDelay")
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {

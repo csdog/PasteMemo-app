@@ -139,6 +139,8 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
     /// 用屏幕坐标是因为浮窗要能超出主面板边界，面板内坐标不够用。
     /// 可选：主窗口走 popover、不需要，传 nil 即可。
     var onFocusedRowFrame: ((_ rowOnScreen: CGRect, _ listOnScreen: CGRect) -> Void)? = nil
+    /// 快捷面板去掉滚动条轨道，只留滑块。
+    var hidesScrollerTrack: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -151,6 +153,9 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        if hidesScrollerTrack {
+            TracklessScroller.install(on: scrollView)
+        }
 
         let tableView = NativeClipHistoryTableView()
         tableView.headerView = nil
@@ -178,6 +183,9 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        if hidesScrollerTrack {
+            TracklessScroller.install(on: scrollView)
+        }
         let structureChange = context.coordinator.applyRows(rows)
         context.coordinator.applyPaginationState(canLoadMore: canLoadMore)
         context.coordinator.applySelection(selectedItemIDs)

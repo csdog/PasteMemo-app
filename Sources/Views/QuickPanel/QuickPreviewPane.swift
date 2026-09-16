@@ -221,6 +221,7 @@ struct QuickPreviewPane: View {
                     .padding(.vertical, 14)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+            .hideScrollerTrack()
         }
     }
 
@@ -257,7 +258,8 @@ struct QuickPreviewPane: View {
                     itemID: item.itemID,
                     // 仅对纯文本类型启用搜索高亮，避免在 code / link / mixed 等
                     // 特殊渲染路径上意外染色（rich-text 分支本身已忽略 searchText）
-                    searchText: item.contentType == .text ? searchText : ""
+                    searchText: item.contentType == .text ? searchText : "",
+                    hidesScrollerTrack: true
                 )
                     .id(item.persistentModelID)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -381,7 +383,8 @@ struct QuickPreviewPane: View {
                 itemID: item.itemID,
                 searchText: searchText,
                 fontSize: 12,
-                textColor: .secondaryLabelColor
+                textColor: .secondaryLabelColor,
+                hidesScrollerTrack: true
             )
             .id(item.persistentModelID)
             .frame(height: ocrCardWidth > 0
@@ -498,7 +501,8 @@ struct QuickPreviewPane: View {
                 richTextData: item.richTextData,
                 richTextType: item.richTextType,
                 allowRichRender: richTextPreviewEnabled && allowHeavyPreview,
-                itemID: item.itemID
+                itemID: item.itemID,
+                hidesScrollerTrack: true
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(14)
@@ -542,7 +546,8 @@ struct QuickPreviewPane: View {
                 code: item.content,
                 language: item.resolvedCodeLanguage,
                 deferredHighlightDelayMs: 120,
-                maximumHighlightedCharacters: 12_000
+                maximumHighlightedCharacters: 12_000,
+                hidesScrollerTrack: true
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
@@ -555,6 +560,7 @@ struct QuickPreviewPane: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
             }
+            .hideScrollerTrack()
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }

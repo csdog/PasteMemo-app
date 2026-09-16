@@ -24,6 +24,7 @@ struct NativeTextView: NSViewRepresentable {
     var textColor: NSColor = .labelColor
     var onTextChange: ((String) -> Void)?
     var onEscape: (() -> Void)?
+    var hidesScrollerTrack: Bool = false
 
     /// Skip the highlight scan for very large content to keep typing responsive.
     /// 200K chars ≈ a 200 KB plain-text clip; above this the per-keystroke scan
@@ -86,6 +87,9 @@ struct NativeTextView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        if hidesScrollerTrack {
+            TracklessScroller.install(on: scrollView)
+        }
         if autoFocus {
             DispatchQueue.main.async { [weak textView] in
                 guard let textView, let window = textView.window else { return }
