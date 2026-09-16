@@ -161,7 +161,7 @@
 "settings.quickPanelSecondaryRow.types" = "Typen";
 "settings.quickPanelSecondaryRow.groups" = "Gruppen";
 "settings.quickPanelTabTypes" = "Kategorien in der Tab-Leiste";
-"settings.quickPanelTabTypes.hint" = "Deaktivieren, um eine Kategorie in der Schnellansicht-Tableiste auszublenden. Die Seitenleiste des Hauptfensters bleibt unverändert.";
+"settings.quickPanelTabTypes.hint" = "Zum Sortieren ziehen, einschließlich Angeheftet. Deaktivieren, um eine Kategorie in der Schnellansicht-Tableiste auszublenden. Die Seitenleiste des Hauptfensters bleibt unverändert.";
 "settings.history" = "Verlauf";
 "settings.retentionDays" = "Verlauf behalten";
 "settings.retentionDays.forever" = "Für immer";
@@ -627,7 +627,7 @@ Verwenden Sie %@ zum Einfügen.";
 "menu.openMain" = "Hauptfenster öffnen";
 "menu.pause" = "Zwischenablage-Überwachung pausieren";
 "menu.quickPanel" = "Schnelles Einfügen";
-"menu.quit" = "%@ beenden";
+"menu.quit" = "Beenden";
 "menu.accessibility.grant" = "⚠ Bedienungshilfen-Berechtigung erteilen";
 "menu.resume" = "Zwischenablage-Überwachung fortsetzen";
 "menu.settings" = "Einstellungen";

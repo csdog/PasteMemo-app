@@ -144,11 +144,25 @@ enum AppMenuActions {
 
     static func showEditGroupAlert(group: SmartGroup, context: ModelContext) {
         guard let result = GroupEditorPanel.show(name: group.name, icon: group.icon, preservesItems: group.preservesItems) else { return }
+        let oldName = group.name
         group.name = result.name
         group.icon = result.icon
         group.preservesItems = result.preservesItems
-        try? context.save()
-        NotificationCenter.default.post(name: ClipItemStore.itemDidUpdateNotification, object: nil)
+        if result.name != oldName {
+            let itemDescriptor = FetchDescriptor<ClipItem>(predicate: #Predicate { $0.groupName == oldName })
+            if let items = try? context.fetch(itemDescriptor) {
+                for item in items { item.groupName = result.name }
+            }
+        }
+        ClipItemStore.saveAndNotify(context)
+    }
+
+    /// Writes `sortOrder` from the given display order and refreshes sidebars.
+    static func persistGroupSortOrder(_ groups: [SmartGroup], context: ModelContext) {
+        for (idx, group) in groups.enumerated() {
+            group.sortOrder = idx
+        }
+        ClipItemStore.saveAndNotify(context)
     }
 
     static func deleteGroup(name: String, context: ModelContext) {

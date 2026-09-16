@@ -49,19 +49,95 @@ enum QuickPanelSettings {
     static let imageLayoutKey = "quickPanelImageLayout"
     /// 瀑布流密度（疏 / 中 / 密 → 目标列宽），默认中
     static let imageGridDensityKey = "quickPanelImageGridDensity"
-    /// 在快捷面板标签栏里隐藏的内容类型（逗号分隔的 rawValue）。
+    /// 在快捷面板标签栏里隐藏的项（逗号分隔的 id：`pinned` 或内容类型 rawValue）。
     ///
-    /// 刻意不复用 `typeOrder`：那个键的语义是**排序**，且 `visibleCases` 会把不在
-    /// 其中的类型自动追加到末尾——新增类型不该悄悄消失，这个行为是对的，不能为了
-    /// 实现隐藏去破坏它。所以隐藏用独立的键，两者正交。
-    ///
-    /// 只作用于快捷面板：主窗口侧边栏保持全量，隐藏之后还能从那儿找回内容。
+    /// 刻意不复用 `typeOrder`：那个键是主窗口侧边栏的类型排序。快捷面板的顺序和
+    /// 显隐都只作用于标签栏，主窗口侧边栏保持全量。
     static let hiddenTabTypesKey = "quickPanelHiddenTabTypes"
+    /// 快捷面板标签栏顺序（逗号分隔的 id，含 `pinned` / `all` / 内容类型）。
+    static let tabOrderKey = "quickPanelTabOrder"
+    static let pinnedTabID = "pinned"
+    static let allTabID = "all"
 
     /// 被隐藏的类型集合
     static func hiddenTabTypes() -> Set<ClipContentType> {
         let raw = UserDefaults.standard.string(forKey: hiddenTabTypesKey) ?? ""
         return Set(raw.split(separator: ",").compactMap { ClipContentType(rawValue: String($0)) })
+    }
+
+    static var defaultTabOrderIDs: [String] {
+        [pinnedTabID, allTabID] + ClipContentType.visibleCases.map(\.rawValue)
+    }
+
+    static func resolvedTabOrderIDs(from raw: String) -> [String] {
+        let fallback = defaultTabOrderIDs
+        let saved = raw.split(separator: ",").map(String.init).filter { !$0.isEmpty }
+        guard !saved.isEmpty else { return fallback }
+        let known = Set(fallback)
+        var seen = Set<String>()
+        var result: [String] = []
+        for id in saved where known.contains(id) && seen.insert(id).inserted {
+            result.append(id)
+        }
+        for id in fallback where seen.insert(id).inserted {
+            result.append(id)
+        }
+        return result
+    }
+
+    static func resolvedTabItems(from raw: String) -> [QuickPanelTabItem] {
+        resolvedTabOrderIDs(from: raw).compactMap(QuickPanelTabItem.parse)
+    }
+
+    static func hiddenTabIDs(from raw: String) -> Set<String> {
+        Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+    }
+}
+
+/// 快捷面板设置里「标签栏显示的分类」的一项，含置顶 / 全部 / 内容类型。
+enum QuickPanelTabItem: Hashable, Identifiable {
+    case pinned
+    case all
+    case type(ClipContentType)
+
+    var id: String { storageID }
+
+    var storageID: String {
+        switch self {
+        case .pinned: return QuickPanelSettings.pinnedTabID
+        case .all: return QuickPanelSettings.allTabID
+        case .type(let type): return type.rawValue
+        }
+    }
+
+    static func parse(_ raw: String) -> QuickPanelTabItem? {
+        switch raw {
+        case QuickPanelSettings.pinnedTabID: return .pinned
+        case QuickPanelSettings.allTabID: return .all
+        default:
+            guard let type = ClipContentType(rawValue: raw),
+                  ClipContentType.defaultVisibleCases.contains(type) else { return nil }
+            return .type(type)
+        }
+    }
+
+    var canHide: Bool { true }
+
+    var icon: String {
+        switch self {
+        case .pinned: return "pin"
+        case .all: return "tray.full"
+        case .type(let type): return type.icon
+        }
+    }
+
+    @MainActor
+    var label: String {
+        switch self {
+        case .pinned: return L10n.tr("filter.pinned")
+        case .all: return L10n.tr("filter.all")
+        case .type(let type): return type.label
+        }
     }
 }
 

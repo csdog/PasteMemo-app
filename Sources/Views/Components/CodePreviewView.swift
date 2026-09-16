@@ -7,6 +7,7 @@ struct CodePreviewView: NSViewRepresentable {
     var insets: NSSize = NSSize(width: 14, height: 14)
     var deferredHighlightDelayMs: Int? = nil
     var maximumHighlightedCharacters: Int? = nil
+    var hidesScrollerTrack: Bool = false
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -20,6 +21,9 @@ struct CodePreviewView: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        if hidesScrollerTrack {
+            TracklessScroller.install(on: scrollView)
+        }
         context.coordinator.lastKey = viewKey(appearance: NSApp.effectiveAppearance.name.rawValue)
         applyInitialContent(textView, coordinator: context.coordinator)
         return scrollView
