@@ -579,6 +579,9 @@ struct MainWindowView: View {
                 guard let item = historyItemMap[id] else { return }
                 handleRowClick(item)
             },
+            onItemHover: { id in
+                handleRowHover(id)
+            },
             onItemRightClick: { id in
                 if !selectedItems.contains(id) {
                     selectedItems = [id]
@@ -747,39 +750,35 @@ struct MainWindowView: View {
         }
     }
 
+    private func handleRowHover(_ id: ClipItem.ID) {
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        guard ClipHistoryPointerHelper.hoverIntent(
+            itemID: id,
+            selectedIDs: selectedItems,
+            commandHeld: flags.contains(.command),
+            shiftHeld: flags.contains(.shift)
+        ) == .select else { return }
+        selectedItems = [id]
+        navigationCursor = id
+        selectionAnchor = id
+    }
+
     private func handleRowClick(_ item: ClipItem) {
         let flags = NSApp.currentEvent?.modifierFlags ?? []
         let id = item.persistentModelID
-        let now = Date()
-
-        // 双击复制：检测到 0.3s 内同行二次点击，先把 click 1 改动的选中态还原回去
-        // （避免 detail pane 闪一下又变化），再按右键菜单"复制"的语义执行——
-        // 多选包含当前行就合并复制，否则单条复制。单击响应不延迟。
-        if lastClickedID == id, now.timeIntervalSince(lastClickTime) < 0.3 {
-            if let snap = preClickSnapshot {
-                selectedItems = snap.selected
-                selectionAnchor = snap.anchor
-                navigationCursor = snap.cursor
-            }
-            if selectedItems.contains(id), selectedItems.count > 1 {
-                copySelectedToClipboard()
-            } else {
-                copyToClipboard(item)
-            }
-            lastClickedID = nil
-            lastClickTime = .distantPast
-            preClickSnapshot = nil
-            return
-        }
-
-        // 在改动选中态前保存快照，留给紧随其后的可能双击还原。
-        preClickSnapshot = (selectedItems, selectionAnchor, navigationCursor)
-
         let previousCursor = navigationCursor
-        navigationCursor = id
 
-        if flags.contains(.command) {
+        switch ClipHistoryPointerHelper.clickIntent(
+            itemID: id,
+            selectedIDs: selectedItems,
+            commandHeld: flags.contains(.command),
+            shiftHeld: flags.contains(.shift)
+        ) {
+        case .copy:
+            copyToClipboard(item)
+        case .toggle:
             // Cmd+Click: toggle this item in selection
+            navigationCursor = id
             if selectedItems.contains(id) {
                 selectedItems.remove(id)
                 if selectionAnchor == id {
@@ -789,8 +788,9 @@ struct MainWindowView: View {
                 selectedItems.insert(id)
                 selectionAnchor = selectionAnchor ?? id
             }
-        } else if flags.contains(.shift) {
+        case .rangeSelect:
             // Shift+Click: range select
+            navigationCursor = id
             let items = visualOrderedItems
             let anchor = ClipHistorySelectionHelper.resolvedAnchor(
                 existingAnchor: selectionAnchor,
@@ -805,33 +805,23 @@ struct MainWindowView: View {
             ) else {
                 selectedItems = [id]
                 selectionAnchor = id
-                lastClickedID = id
-                lastClickTime = now
                 return
             }
             selectedItems = selection
             selectionAnchor = anchor
-        } else {
-            if selectedItems == [id] {
-                selectedItems.removeAll()
-                selectionAnchor = nil
-            } else {
-                selectedItems = [id]
-                selectionAnchor = id
-            }
+        case .select:
+            navigationCursor = id
+            selectedItems = [id]
+            selectionAnchor = id
+        case .ignore:
+            break
         }
-
-        lastClickedID = id
-        lastClickTime = now
     }
 
     private enum MoveDirection { case up, down }
 
     @State private var navigationCursor: ClipItem.ID?
     @State private var selectionAnchor: ClipItem.ID?
-    @State private var lastClickedID: ClipItem.ID?
-    @State private var lastClickTime: Date = .distantPast
-    @State private var preClickSnapshot: (selected: Set<ClipItem.ID>, anchor: ClipItem.ID?, cursor: ClipItem.ID?)?
 
     private func moveSelection(direction: MoveDirection, extendSelection: Bool = false) {
         let items = visualOrderedItems

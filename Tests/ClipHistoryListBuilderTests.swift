@@ -132,6 +132,108 @@ struct ClipHistoryListBuilderTests {
         )
     }
 
+    @Test("Hover intent selects a new row and ignores modifiers or the already-selected item")
+    func hoverIntentSelectsUnlessModifierOrAlreadySelected() {
+        let first = "a"
+        let second = "b"
+
+        #expect(
+            ClipHistoryPointerHelper.hoverIntent(
+                itemID: first,
+                selectedIDs: [second],
+                commandHeld: false,
+                shiftHeld: false
+            ) == .select
+        )
+        #expect(
+            ClipHistoryPointerHelper.hoverIntent(
+                itemID: first,
+                selectedIDs: [first],
+                commandHeld: false,
+                shiftHeld: false
+            ) == .ignore
+        )
+        #expect(
+            ClipHistoryPointerHelper.hoverIntent(
+                itemID: first,
+                selectedIDs: [first, second],
+                commandHeld: false,
+                shiftHeld: false
+            ) == .select
+        )
+        #expect(
+            ClipHistoryPointerHelper.hoverIntent(
+                itemID: first,
+                selectedIDs: [second],
+                commandHeld: true,
+                shiftHeld: false
+            ) == .ignore
+        )
+        #expect(
+            ClipHistoryPointerHelper.hoverIntent(
+                itemID: first,
+                selectedIDs: [second],
+                commandHeld: false,
+                shiftHeld: true
+            ) == .ignore
+        )
+    }
+
+    @Test("Click intent copies the already-selected item and keeps modifier multi-select")
+    func clickIntentCopiesAlreadySelectedAndPreservesModifiers() {
+        let first = "a"
+        let second = "b"
+
+        #expect(
+            ClipHistoryPointerHelper.clickIntent(
+                itemID: first,
+                selectedIDs: [first],
+                commandHeld: false,
+                shiftHeld: false
+            ) == .copy
+        )
+        #expect(
+            ClipHistoryPointerHelper.clickIntent(
+                itemID: first,
+                selectedIDs: [second],
+                commandHeld: false,
+                shiftHeld: false
+            ) == .select
+        )
+        #expect(
+            ClipHistoryPointerHelper.clickIntent(
+                itemID: first,
+                selectedIDs: [first, second],
+                commandHeld: false,
+                shiftHeld: false
+            ) == .select
+        )
+        #expect(
+            ClipHistoryPointerHelper.clickIntent(
+                itemID: first,
+                selectedIDs: [first],
+                commandHeld: true,
+                shiftHeld: false
+            ) == .toggle
+        )
+        #expect(
+            ClipHistoryPointerHelper.clickIntent(
+                itemID: first,
+                selectedIDs: [first],
+                commandHeld: false,
+                shiftHeld: true
+            ) == .rangeSelect
+        )
+        #expect(
+            ClipHistoryPointerHelper.clickIntent(
+                itemID: first,
+                selectedIDs: [second],
+                commandHeld: true,
+                shiftHeld: true
+            ) == .toggle
+        )
+    }
+
     @Test("Pagination helper clears pending state when rows change or no more pages remain")
     func paginationResetsPendingStateWhenProgressStops() {
         #expect(

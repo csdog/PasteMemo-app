@@ -137,8 +137,6 @@ struct QuickPanelView: View {
     @State private var keyMonitor: Any?
     @State private var flagsMonitor: Any?
     @FocusState private var isSearchFocused: Bool
-    @State private var lastClickedID: PersistentIdentifier?
-    @State private var lastClickTime: Date = .distantPast
     @State private var lastNavigatedID: PersistentIdentifier?
     @State private var selectionAnchor: PersistentIdentifier?
     @State private var showAllShortcuts = false
@@ -274,32 +272,44 @@ struct QuickPanelView: View {
         selectionAnchor = id
     }
 
+    private func handleItemHover(_ id: PersistentIdentifier) {
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        guard ClipHistoryPointerHelper.hoverIntent(
+            itemID: id,
+            selectedIDs: selectedItemIDs,
+            commandHeld: flags.contains(.command),
+            shiftHeld: flags.contains(.shift)
+        ) == .select else { return }
+        // 鼠标划过图片 = 进入网格焦点级，高亮跟着走
+        if isImageGridActive { isGridFocused = true }
+        selectItem(id)
+    }
+
     private func handleItemClick(_ id: PersistentIdentifier) {
         userInteractedSinceShow = true
         // 鼠标点选图片 = 直接进入网格焦点级，后续方向键在图片间移动
         if isImageGridActive { isGridFocused = true }
-        let now = Date()
-        let isDoubleClick = lastClickedID == id && now.timeIntervalSince(lastClickTime) < 0.3
-
-        if isDoubleClick {
-            selectItem(id)
-            handlePaste()
-            lastClickedID = nil
-            lastClickTime = .distantPast
-            return
-        }
-
         let flags = NSApp.currentEvent?.modifierFlags ?? []
-        if flags.contains(.command) {
+        switch ClipHistoryPointerHelper.clickIntent(
+            itemID: id,
+            selectedIDs: selectedItemIDs,
+            commandHeld: flags.contains(.command),
+            shiftHeld: flags.contains(.shift)
+        ) {
+        case .toggle:
             toggleItemInSelection(id)
-        } else if flags.contains(.shift) {
+        case .rangeSelect:
             extendSelectionTo(id)
-        } else {
+        case .copy:
+            if let item = cachedItemMap[id] {
+                copyItemsFullFidelity([item], dismissAfterCopy: true, playSound: true)
+            }
+        case .select:
             selectItem(id)
+        case .ignore:
+            break
         }
         isSearchFocused = true
-        lastClickedID = id
-        lastClickTime = now
     }
 
     private func toggleItemInSelection(_ id: PersistentIdentifier) {
@@ -1243,6 +1253,9 @@ struct QuickPanelView: View {
             onItemTap: { id in
                 handleItemClick(id)
             },
+            onItemHover: { id in
+                handleItemHover(id)
+            },
             onItemRightClick: { id in
                 if !selectedItemIDs.contains(id) {
                     selectedItemIDs = [id]
@@ -1309,6 +1322,7 @@ struct QuickPanelView: View {
             // 让列表/网格继续以为它开着会多触发一轮可见行重建。
             showCommandPalette: false,
             onTap: { id in handleItemClick(id) },
+            onHover: { id in handleItemHover(id) },
             onCommandPaletteDismiss: {
                 showCommandPalette = false
                 isSearchFocused = true
