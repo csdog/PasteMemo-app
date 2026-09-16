@@ -143,6 +143,38 @@ func shortcutDisplayParts(keyCode: Int, modifiers: Int) -> [String] {
     return parts
 }
 
+/// 把 Carbon 风格快捷键转成 NSMenuItem 的 keyEquivalent + modifierMask，
+/// 让 AppKit 按系统菜单样式（右对齐、灰色）渲染快捷键提示。
+/// 快捷键未设置或键位无法映射时返回 nil。
+func menuKeyEquivalent(keyCode: Int, modifiers: Int) -> (key: String, mask: NSEvent.ModifierFlags)? {
+    guard keyCode >= 0 && modifiers >= 0 else { return nil }
+    var mask: NSEvent.ModifierFlags = []
+    if modifiers & controlKey != 0 { mask.insert(.control) }
+    if modifiers & optionKey != 0 { mask.insert(.option) }
+    if modifiers & shiftKey != 0 { mask.insert(.shift) }
+    if modifiers & cmdKey != 0 { mask.insert(.command) }
+
+    let key: String
+    switch keyCode {
+    case 36: key = "\r"
+    case 48: key = "\t"
+    case 49: key = " "
+    case 53: key = "\u{1b}"
+    default:
+        let name = keyName(for: keyCode)
+        if name.hasPrefix("F"), let n = Int(name.dropFirst()), (1...20).contains(n) {
+            guard let scalar = UnicodeScalar(NSF1FunctionKey + n - 1) else { return nil }
+            key = String(Character(scalar))
+        } else if name.count == 1 {
+            // 字母必须小写，大写会被 AppKit 解读为隐含 Shift
+            key = name.lowercased()
+        } else {
+            return nil
+        }
+    }
+    return (key, mask)
+}
+
 private func keyName(for keyCode: Int) -> String {
     let mapping: [Int: String] = [
         0: "A", 1: "S", 2: "D", 3: "F", 4: "H", 5: "G", 6: "Z", 7: "X",
