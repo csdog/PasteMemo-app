@@ -6,7 +6,7 @@ import AppKit
 ///
 /// 列表（`NativeClipHistoryList`）是单列 NSTableView，做不了多列变高布局，所以图片网格
 /// 是独立的一条 SwiftUI 视图路径：选中状态、粘贴/复制/删除全部复用 `QuickPanelView`
-/// 的 `selectedItemIDs` / `lastNavigatedID`，本视图只负责「渲染 + 上报点击」。
+/// 的 `selectedItemIDs` / `lastNavigatedID`，本视图只负责「渲染 + 上报点击/悬停」。
 /// 键盘四向导航在父视图 `moveGrid` 里用同一套 `MasonryLayout` 计算，二者列分配一致。
 
 // MARK: - 比例缓存（仅主线程；读图片头部，开销小，memoize）
@@ -100,9 +100,11 @@ struct QuickImageGridView<Menu: View, Palette: View>: View {
     let focusedItemID: PersistentIdentifier?
     /// Cmd+K 命令面板是否展开——弹在焦点格上（与列表把面板挂在选中行上一致）。
     let showCommandPalette: Bool
-    /// 点击某项（单击/⌘单击/⇧单击/双击 都走这里，由 `handleItemClick` 读
-    /// `NSApp.currentEvent` 的修饰键判定，双击粘贴也在其中，与列表完全一致）。
+    /// 点击某项（单击/⌘单击/⇧单击 都走这里，由 `handleItemClick` 读
+    /// `NSApp.currentEvent` 的修饰键判定；已选中再点则复制，与列表完全一致）。
     let onTap: (PersistentIdentifier) -> Void
+    /// 悬停切选中/预览（网格本身无右侧预览，但仍更新 selectedItemIDs，便于再点复制）。
+    var onHover: ((PersistentIdentifier) -> Void)? = nil
     let onCommandPaletteDismiss: () -> Void
     /// 滚动接近底部时分页加载（与列表一致；否则图片多时只看得到第一页）。
     let onLoadMore: () -> Void
@@ -137,6 +139,7 @@ struct QuickImageGridView<Menu: View, Palette: View>: View {
                                     isPaletteTarget: showCommandPalette
                                         && item.persistentModelID == focusedItemID,
                                     onTap: onTap,
+                                    onHover: onHover,
                                     onCommandPaletteDismiss: onCommandPaletteDismiss,
                                     contextMenu: contextMenu,
                                     commandPalette: commandPalette
@@ -155,6 +158,7 @@ struct QuickImageGridView<Menu: View, Palette: View>: View {
                 .padding(.horizontal, Self.hPad)
                 .padding(.vertical, 14)
             }
+            .hideScrollerTrack()
             .onChange(of: focusedItemID) { _, id in
                 guard let id else { return }
                 // 不用 anchor: .center —— 那会让「点击已可见的图」也被强制滚到正中，
@@ -177,6 +181,7 @@ private struct ImageGridCell<Menu: View, Palette: View>: View {
     /// 命令面板是否要弹在这一格（= showCommandPalette && 它是焦点格）。
     let isPaletteTarget: Bool
     let onTap: (PersistentIdentifier) -> Void
+    var onHover: ((PersistentIdentifier) -> Void)? = nil
     let onCommandPaletteDismiss: () -> Void
     let contextMenu: (ClipItem) -> Menu
     let commandPalette: (ClipItem) -> Palette
@@ -207,8 +212,7 @@ private struct ImageGridCell<Menu: View, Palette: View>: View {
         )
         .frame(width: width, height: height)
         .clipped()
-        // 图片自身不接收点击：否则 AsyncPreviewImageView 内部的 count:2 手势会吞掉第二次
-        // 点击，外层 handleItemClick 的「双击=粘贴」就触发不了。让点击全部落到外层单一手势。
+        // 图片自身不接收点击：让点击全部落到外层单一手势，避免内部手势吞掉再点复制。
         .allowsHitTesting(false)
         .overlay(alignment: .bottom) {
             if showName { nameOverlay.allowsHitTesting(false) }
@@ -237,7 +241,10 @@ private struct ImageGridCell<Menu: View, Palette: View>: View {
         )
         .shadow(color: .black.opacity(0.12), radius: 3, x: 0, y: 1)
         .contentShape(RoundedRectangle(cornerRadius: 10))
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering { onHover?(item.persistentModelID) }
+        }
         .onTapGesture { onTap(item.persistentModelID) }
         .popover(
             isPresented: Binding(

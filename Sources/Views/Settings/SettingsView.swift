@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import ServiceManagement
 import Carbon
+import AppKit
 
 struct SettingsView: View {
     @State private var selection: SettingsCategory? = .general
@@ -595,10 +596,15 @@ struct QuickPanelPane: View {
     @AppStorage(QuickPanelSettings.rememberLastFilterKey) private var quickPanelRememberLastFilter = false
     @AppStorage(QuickPanelSettings.imageLayoutKey) private var quickPanelImageLayout = QuickPanelImageLayout.list.rawValue
     @AppStorage(QuickPanelSettings.hiddenTabTypesKey) private var quickPanelHiddenTabTypes = ""
+    @AppStorage(QuickPanelSettings.tabOrderKey) private var quickPanelTabOrder = ""
     @AppStorage(QuickPanelSettings.imageGridDensityKey) private var quickPanelImageGridDensity = QuickPanelImageGridDensity.medium.rawValue
     @AppStorage(QuickPanelPositionSettings.modeKey) private var quickPanelPositionMode = QuickPanelPositionMode.screenCenter.rawValue
     @AppStorage(QuickPanelPositionSettings.screenTargetKey) private var quickPanelScreenTarget = QuickPanelScreenTarget.active.rawValue
     @AppStorage(QuickPanelPositionSettings.specifiedScreenIDKey) private var quickPanelSpecifiedScreenID = ""
+    @State private var draggingTab: QuickPanelTabItem?
+    @State private var tabTypeOrder: [QuickPanelTabItem] = QuickPanelSettings.resolvedTabItems(
+        from: UserDefaults.standard.string(forKey: QuickPanelSettings.tabOrderKey) ?? ""
+    )
 
     private var screenOptions: [ScreenOption] { ScreenLocator.options() }
     private var currentPositionMode: QuickPanelPositionMode {
@@ -693,16 +699,15 @@ struct QuickPanelPane: View {
             // 行高和缩进都跟其它设置项对不齐。Section 的 header/footer 是 Form 的
             // 标准结构，跟这一页其它分节自然一致。
             Section {
-                ForEach(ClipContentType.visibleCases, id: \.self) { type in
-                    Toggle(isOn: tabTypeVisibleBinding(type)) {
-                        Label(type.label, systemImage: type.icon)
-                    }
-                    .padding(.vertical, 2)
+                ForEach(tabTypeOrder) { item in
+                    tabTypeRow(item)
                 }
             } header: {
-                Text(L10n.tr("settings.quickPanelTabTypes"))
-            } footer: {
-                Text(L10n.tr("settings.quickPanelTabTypes.hint"))
+                HStack(spacing: 4) {
+                    Text(L10n.tr("settings.quickPanelTabTypes"))
+                    NativeToolTipIcon(text: L10n.tr("settings.quickPanelTabTypes.hint"))
+                        .frame(width: 16, height: 16)
+                }
             }
 
             Section(L10n.tr("settings.behavior")) {
@@ -715,6 +720,7 @@ struct QuickPanelPane: View {
         .formStyle(.grouped)
         .onAppear {
             ensureSpecifiedScreenSelection()
+            tabTypeOrder = QuickPanelSettings.resolvedTabItems(from: quickPanelTabOrder)
         }
         .onChange(of: quickPanelPositionMode) {
             ensureSpecifiedScreenSelection()
@@ -752,24 +758,55 @@ struct QuickPanelPane: View {
         }
     }
 
-    /// 存的是「隐藏集合」而不是「显示集合」：这样新增内容类型时默认可见，
-    /// 老用户的配置不会把它挡在外面（同 typeOrder 里 missing 自动追加的取舍）。
-    private func tabTypeVisibleBinding(_ type: ClipContentType) -> Binding<Bool> {
+    @ViewBuilder
+    private func tabTypeRow(_ item: QuickPanelTabItem) -> some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 14)
+                Label(item.label, systemImage: item.icon)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+            .onDrag {
+                draggingTab = item
+                return NSItemProvider(object: item.storageID as NSString)
+            }
+            Toggle("", isOn: tabTypeVisibleBinding(item))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+        }
+        .padding(.vertical, 2)
+        .onDrop(of: [.text], delegate: TabTypeDropDelegate(
+            target: item,
+            dragging: $draggingTab,
+            items: $tabTypeOrder,
+            persist: persistTabTypeOrder
+        ))
+        .pointerCursor()
+    }
+
+    private func persistTabTypeOrder(_ items: [QuickPanelTabItem]) {
+        quickPanelTabOrder = items.map(\.storageID).joined(separator: ",")
+    }
+
+    /// 存的是「隐藏集合」而不是「显示集合」：这样新增分类时默认可见。
+    private func tabTypeVisibleBinding(_ item: QuickPanelTabItem) -> Binding<Bool> {
         Binding(
             get: {
-                let hidden = quickPanelHiddenTabTypes.split(separator: ",").map(String.init)
-                return !hidden.contains(type.rawValue)
+                !QuickPanelSettings.hiddenTabIDs(from: quickPanelHiddenTabTypes).contains(item.storageID)
             },
             set: { visible in
-                var hidden = Set(quickPanelHiddenTabTypes.split(separator: ",").map(String.init))
+                var hidden = QuickPanelSettings.hiddenTabIDs(from: quickPanelHiddenTabTypes)
                 if visible {
-                    hidden.remove(type.rawValue)
+                    hidden.remove(item.storageID)
                 } else {
-                    hidden.insert(type.rawValue)
+                    hidden.insert(item.storageID)
                 }
-                // 按 visibleCases 的顺序落盘，便于人肉核对 defaults
-                quickPanelHiddenTabTypes = ClipContentType.visibleCases
-                    .map(\.rawValue)
+                quickPanelHiddenTabTypes = QuickPanelSettings.defaultTabOrderIDs
                     .filter { hidden.contains($0) }
                     .joined(separator: ",")
             }
@@ -800,6 +837,38 @@ struct QuickPanelPane: View {
                 quickPanelSpecifiedScreenID = screenID ?? screenOptions.first?.id ?? ""
             }
         }
+    }
+}
+
+private struct TabTypeDropDelegate: DropDelegate {
+    let target: QuickPanelTabItem
+    @Binding var dragging: QuickPanelTabItem?
+    @Binding var items: [QuickPanelTabItem]
+    let persist: ([QuickPanelTabItem]) -> Void
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        persist(items)
+        return true
+    }
+
+    func dropEntered(info: DropInfo) {
+        guard let source = dragging, source != target,
+              let fromIdx = items.firstIndex(of: source),
+              let toIdx = items.firstIndex(of: target)
+        else { return }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            items.move(fromOffsets: IndexSet(integer: fromIdx), toOffset: toIdx > fromIdx ? toIdx + 1 : toIdx)
+        }
+        persist(items)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func validateDrop(info: DropInfo) -> Bool {
+        dragging != nil
     }
 }
 
@@ -1208,5 +1277,23 @@ struct AboutTab: View {
         }
         .formStyle(.grouped)
         .scrollDisabled(true)
+    }
+}
+
+/// Form 分区标题会吃掉 SwiftUI `.help()`。直接用 AppKit 的 `toolTip`，还是系统那条黄提示。
+private struct NativeToolTipIcon: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSImageView {
+        let view = NSImageView()
+        view.image = NSImage(systemSymbolName: "questionmark.circle", accessibilityDescription: nil)
+        view.contentTintColor = .labelColor
+        view.imageScaling = .scaleProportionallyDown
+        view.toolTip = text
+        return view
+    }
+
+    func updateNSView(_ view: NSImageView, context: Context) {
+        view.toolTip = text
     }
 }

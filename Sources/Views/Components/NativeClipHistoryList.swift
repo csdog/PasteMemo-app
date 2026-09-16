@@ -57,6 +57,42 @@ enum ClipHistorySelectionHelper {
     }
 }
 
+/// 列表指针手势的意图：悬停切预览、再点已选项复制、Cmd/Shift 多选互不抢。
+enum ClipHistoryPointerIntent: Equatable {
+    case ignore
+    case select
+    case copy
+    case toggle
+    case rangeSelect
+}
+
+enum ClipHistoryPointerHelper {
+    /// 悬停：按住 Cmd/Shift 不抢多选；已是该项单选则不再重复回调。
+    static func hoverIntent<ID: Hashable>(
+        itemID: ID,
+        selectedIDs: Set<ID>,
+        commandHeld: Bool,
+        shiftHeld: Bool
+    ) -> ClipHistoryPointerIntent {
+        if commandHeld || shiftHeld { return .ignore }
+        if selectedIDs.count == 1, selectedIDs.contains(itemID) { return .ignore }
+        return .select
+    }
+
+    /// 单击：Cmd/Shift 仍走原有多选；已是该项单选则复制，否则单选。
+    static func clickIntent<ID: Hashable>(
+        itemID: ID,
+        selectedIDs: Set<ID>,
+        commandHeld: Bool,
+        shiftHeld: Bool
+    ) -> ClipHistoryPointerIntent {
+        if commandHeld { return .toggle }
+        if shiftHeld { return .rangeSelect }
+        if selectedIDs.count == 1, selectedIDs.contains(itemID) { return .copy }
+        return .select
+    }
+}
+
 enum ClipHistoryPaginationHelper {
     static func shouldResetPendingLoadMore(previousRowCount: Int, newRowCount: Int, canLoadMore: Bool) -> Bool {
         !canLoadMore || newRowCount != previousRowCount
@@ -88,6 +124,9 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
     let itemRowHeight: CGFloat
     let headerRowHeight: CGFloat
     let onItemTap: (PersistentIdentifier) -> Void
+    /// 鼠标划过条目时回调（header 行、已是当前单选项、按住 Cmd/Shift 时不触发）。
+    /// 不用 SwiftUI `.onHover`：NSHostingView 行上的 hover 不可靠，改走表格的 tracking area。
+    var onItemHover: ((PersistentIdentifier) -> Void)? = nil
     let onItemRightClick: (PersistentIdentifier) -> Void
     let onCommandPaletteDismiss: () -> Void
     let onLoadMore: () -> Void
@@ -100,6 +139,8 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
     /// 用屏幕坐标是因为浮窗要能超出主面板边界，面板内坐标不够用。
     /// 可选：主窗口走 popover、不需要，传 nil 即可。
     var onFocusedRowFrame: ((_ rowOnScreen: CGRect, _ listOnScreen: CGRect) -> Void)? = nil
+    /// 快捷面板去掉滚动条轨道，只留滑块。
+    var hidesScrollerTrack: Bool = false
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -112,6 +153,9 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        if hidesScrollerTrack {
+            TracklessScroller.install(on: scrollView)
+        }
 
         let tableView = NativeClipHistoryTableView()
         tableView.headerView = nil
@@ -139,6 +183,9 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        if hidesScrollerTrack {
+            TracklessScroller.install(on: scrollView)
+        }
         let structureChange = context.coordinator.applyRows(rows)
         context.coordinator.applyPaginationState(canLoadMore: canLoadMore)
         context.coordinator.applySelection(selectedItemIDs)
@@ -182,6 +229,8 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
         // 行高（紧凑 ↔ 舒适切换）记录，用来检测窗口跨过预览断点时是否需要动画过渡。
         private var lastItemRowHeight: CGFloat?
         private var lastHeaderRowHeight: CGFloat?
+        /// 避免 mouseMoved 在同一行里反复回调；移出该行或离开表格后清掉。
+        private var lastHoverReportedID: PersistentIdentifier?
 
         init(parent: NativeClipHistoryList) {
             self.parent = parent
@@ -197,6 +246,12 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
             }
             tableView.onDidMoveToWindow = { [weak self] in
                 self?.reportFocusedRowFrame()
+            }
+            tableView.onHoverPoint = { [weak self] point, flags in
+                self?.handleHover(at: point, modifierFlags: flags)
+            }
+            tableView.onHoverExit = { [weak self] in
+                self?.lastHoverReportedID = nil
             }
             // 面板显示后必须重新上报：viewDidMoveToWindow 那次跑在窗口还停在默认
             // (0,0) 的时候，warmUp 之后还要挪到离屏、show 时才落到最终位置，那份
@@ -248,6 +303,8 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
             tableView?.dataSource = nil
             tableView?.onBoundsChanged = nil
             tableView?.onDidMoveToWindow = nil
+            tableView?.onHoverPoint = nil
+            tableView?.onHoverExit = nil
             if let quickPanelShowObserver {
                 NotificationCenter.default.removeObserver(quickPanelShowObserver)
                 self.quickPanelShowObserver = nil
@@ -372,7 +429,7 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
         }
 
         func applyScrollTarget(_ scrollTargetID: PersistentIdentifier?) {
-            guard tableView != nil else { return }
+            guard let tableView else { return }
             guard let scrollTargetID,
                   let row = parent.rowIndexByItemID[scrollTargetID]
             else {
@@ -382,7 +439,47 @@ struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuC
             // 只有滚动目标真的变化时才触发程序化滚动，用来修复 quick panel 之前的“偶发回顶”。
             guard lastScrolledTargetID != scrollTargetID else { return }
             lastScrolledTargetID = scrollTargetID
+            // 目标行已完全在可见区内就不要再 scrollRowToVisible：
+            // 悬停切选中会更新 lastNavigatedID，但不应因此把列表挪一下。
+            let rowRect = tableView.rect(ofRow: row)
+            if !rowRect.isEmpty, tableView.visibleRect.contains(rowRect) {
+                return
+            }
             scrollToRow(row)
+        }
+
+        func handleHover(at point: NSPoint, modifierFlags: NSEvent.ModifierFlags) {
+            guard let onItemHover = parent.onItemHover, let tableView else { return }
+            let row = tableView.row(at: point)
+            guard row >= 0, row < parent.rows.count else {
+                lastHoverReportedID = nil
+                return
+            }
+            // header 行不参与预览切换
+            guard case .item(let id) = parent.rows[row] else {
+                lastHoverReportedID = nil
+                return
+            }
+            if lastHoverReportedID == id { return }
+
+            let intent = ClipHistoryPointerHelper.hoverIntent(
+                itemID: id,
+                selectedIDs: parent.selectedItemIDs,
+                commandHeld: modifierFlags.contains(.command),
+                shiftHeld: modifierFlags.contains(.shift)
+            )
+            switch intent {
+            case .ignore:
+                // 已是当前单选：记住行，避免同一行 mouseMoved 重复判断
+                if parent.selectedItemIDs.count == 1, parent.selectedItemIDs.contains(id) {
+                    lastHoverReportedID = id
+                }
+            case .select:
+                lastHoverReportedID = id
+                onItemHover(id)
+            default:
+                break
+            }
         }
 
         /// 只在 selection / focus / palette 之类影响 cell 渲染的行级状态真变了时才刷新，
@@ -548,12 +645,54 @@ private final class NativeClipHistoryTableView: NSTableView {
     /// 在 window 还是 nil 的时候，任何依赖窗口/屏幕坐标的上报都拿不到值，之后又
     /// 未必还有 update 来补——所以这里补一次。
     var onDidMoveToWindow: (@MainActor () -> Void)?
+    var onHoverPoint: (@MainActor (NSPoint, NSEvent.ModifierFlags) -> Void)?
+    var onHoverExit: (@MainActor () -> Void)?
     private var observingClipView = false
+    private var hoverTrackingArea: NSTrackingArea?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
         MainActor.assumeIsolated { onDidMoveToWindow?() }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let options: NSTrackingArea.Options = [
+            .mouseMoved,
+            .mouseEnteredAndExited,
+            .activeInKeyWindow,
+            .inVisibleRect,
+        ]
+        let area = NSTrackingArea(rect: .zero, options: options, owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        reportHover(with: event)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        reportHover(with: event)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        MainActor.assumeIsolated { onHoverExit?() }
+    }
+
+    private func reportHover(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let flags = event.modifierFlags
+        MainActor.assumeIsolated {
+            onHoverPoint?(point, flags)
+        }
     }
 
     override func viewDidMoveToSuperview() {
