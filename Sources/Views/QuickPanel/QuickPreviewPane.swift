@@ -7,11 +7,21 @@ struct QuickPreviewPane: View {
     var searchText: String = ""
     @AppStorage(OCRTaskCoordinator.enableOCRKey) private var ocrEnabled = true
     @AppStorage("richTextPreviewEnabled") private var richTextPreviewEnabled = true
+    @AppStorage(QuickPanelSettings.previewFontSizeKey) private var previewFontSizeStored = QuickPanelPreviewFontSize.defaultPoints
     @State private var allowHeavyPreview = false
     @State private var webPreviewReady = false
     @State private var cachedCodeSummary: CodePreviewSummary?
     @State private var dataURIImageData: Data?
     @State private var ocrCardWidth: CGFloat = 0
+
+    private var previewFontSize: CGFloat {
+        QuickPanelPreviewFontSize.resolvedPoints(previewFontSizeStored)
+    }
+
+    /// OCR 卡片略小于正文，避免抢图面；下限 10pt 保证可读。
+    private var ocrFontSize: CGFloat {
+        max(previewFontSize - 1, 10)
+    }
 
     struct CodePreviewSummary: Equatable {
         let language: CodeLanguage
@@ -185,7 +195,7 @@ struct QuickPreviewPane: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let smsText = item.smsMessageText, item.contentType == .text {
             // 短信验证码条目:大号显示码 + 短信原文,不走普通文本渲染
-            SMSCodePreview(code: item.content, message: smsText)
+            SMSCodePreview(code: item.content, message: smsText, messageFontSize: previewFontSize)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if item.contentType == .text {
             previewContent
@@ -257,7 +267,8 @@ struct QuickPreviewPane: View {
                     itemID: item.itemID,
                     // 仅对纯文本类型启用搜索高亮，避免在 code / link / mixed 等
                     // 特殊渲染路径上意外染色（rich-text 分支本身已忽略 searchText）
-                    searchText: item.contentType == .text ? searchText : ""
+                    searchText: item.contentType == .text ? searchText : "",
+                    fontSize: previewFontSize
                 )
                     .id(item.persistentModelID)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -279,7 +290,7 @@ struct QuickPreviewPane: View {
                     .shadow(color: Color(nsColor: parsed.nsColor).opacity(0.4), radius: 8, y: 3)
 
                 Text(parsed.formatted(displayFmt))
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(.system(size: previewFontSize, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
 
@@ -310,7 +321,7 @@ struct QuickPreviewPane: View {
         } else {
             // Fallback: show raw color text if parsing fails
             Text(item.content)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: previewFontSize, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
@@ -380,12 +391,12 @@ struct QuickPreviewPane: View {
                 allowRichRender: false,
                 itemID: item.itemID,
                 searchText: searchText,
-                fontSize: 12,
+                fontSize: ocrFontSize,
                 textColor: .secondaryLabelColor
             )
             .id(item.persistentModelID)
             .frame(height: ocrCardWidth > 0
-                ? min(max(NativeTextView.measuredHeight(text: text, width: ocrCardWidth, fontSize: 12), 36), 120)
+                ? min(max(NativeTextView.measuredHeight(text: text, width: ocrCardWidth, fontSize: ocrFontSize), 36), 120)
                 : 56)
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
@@ -498,7 +509,8 @@ struct QuickPreviewPane: View {
                 richTextData: item.richTextData,
                 richTextType: item.richTextType,
                 allowRichRender: richTextPreviewEnabled && allowHeavyPreview,
-                itemID: item.itemID
+                itemID: item.itemID,
+                fontSize: previewFontSize
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(14)
@@ -542,13 +554,14 @@ struct QuickPreviewPane: View {
                 code: item.content,
                 language: item.resolvedCodeLanguage,
                 deferredHighlightDelayMs: 120,
-                maximumHighlightedCharacters: 12_000
+                maximumHighlightedCharacters: 12_000,
+                fontSize: previewFontSize
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 Text(summary.snippet)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: previewFontSize, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
