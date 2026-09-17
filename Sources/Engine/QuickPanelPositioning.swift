@@ -58,6 +58,8 @@ enum QuickPanelSettings {
     static let tabOrderKey = "quickPanelTabOrder"
     static let pinnedTabID = "pinned"
     static let allTabID = "all"
+    /// 快捷面板右侧预览区正文（文本 / 代码 / 短信原文等）的字号。
+    static let previewFontSizeKey = "quickPanelPreviewFontSize"
 
     /// 被隐藏的类型集合
     static func hiddenTabTypes() -> Set<ClipContentType> {
@@ -175,6 +177,20 @@ enum QuickPanelImageGridDensity: String, CaseIterable {
         case .medium: "settings.imageGridDensity.medium"
         case .dense: "settings.imageGridDensity.dense"
         }
+    }
+}
+
+/// 快捷面板预览正文的字号。存的就是 pt，默认 13，与改之前的硬编码一致。
+enum QuickPanelPreviewFontSize {
+    static let defaultPoints = 13
+    static let options = [11, 12, 13, 14, 15, 16, 18, 20]
+
+    static func resolved(_ stored: Int) -> Int {
+        options.contains(stored) ? stored : defaultPoints
+    }
+
+    static func resolvedPoints(_ stored: Int) -> CGFloat {
+        CGFloat(resolved(stored))
     }
 }
 

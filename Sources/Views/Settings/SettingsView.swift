@@ -598,6 +598,7 @@ struct QuickPanelPane: View {
     @AppStorage(QuickPanelSettings.hiddenTabTypesKey) private var quickPanelHiddenTabTypes = ""
     @AppStorage(QuickPanelSettings.tabOrderKey) private var quickPanelTabOrder = ""
     @AppStorage(QuickPanelSettings.imageGridDensityKey) private var quickPanelImageGridDensity = QuickPanelImageGridDensity.medium.rawValue
+    @AppStorage(QuickPanelSettings.previewFontSizeKey) private var quickPanelPreviewFontSize = QuickPanelPreviewFontSize.defaultPoints
     @AppStorage(QuickPanelPositionSettings.modeKey) private var quickPanelPositionMode = QuickPanelPositionMode.screenCenter.rawValue
     @AppStorage(QuickPanelPositionSettings.screenTargetKey) private var quickPanelScreenTarget = QuickPanelScreenTarget.active.rawValue
     @AppStorage(QuickPanelPositionSettings.specifiedScreenIDKey) private var quickPanelSpecifiedScreenID = ""
@@ -612,6 +613,13 @@ struct QuickPanelPane: View {
     }
     private var currentScreenTarget: QuickPanelScreenTarget {
         QuickPanelScreenTarget(rawValue: quickPanelScreenTarget) ?? .active
+    }
+
+    private var previewFontSizeSelection: Binding<Int> {
+        Binding(
+            get: { QuickPanelPreviewFontSize.resolved(quickPanelPreviewFontSize) },
+            set: { quickPanelPreviewFontSize = $0 }
+        )
     }
 
     var body: some View {
@@ -632,6 +640,11 @@ struct QuickPanelPane: View {
                         ForEach(QuickPanelImageGridDensity.allCases, id: \.rawValue) { option in
                             Text(L10n.tr(option.titleKey)).tag(option.rawValue)
                         }
+                    }
+                }
+                Picker(L10n.tr("settings.previewFontSize"), selection: previewFontSizeSelection) {
+                    ForEach(QuickPanelPreviewFontSize.options, id: \.self) { size in
+                        Text(L10n.tr("settings.previewFontSize.points", size)).tag(size)
                     }
                 }
                 HStack {
