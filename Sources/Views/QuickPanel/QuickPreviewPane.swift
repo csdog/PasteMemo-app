@@ -18,9 +18,14 @@ struct QuickPreviewPane: View {
         QuickPanelPreviewFontSize.resolvedPoints(previewFontSizeStored)
     }
 
-    /// OCR 卡片略小于正文，避免抢图面；下限 10pt 保证可读。
+    /// OCR（含识别为 Markdown）用配置的正文字号；标题等层级由 Markdown 语法本身表达。
     private var ocrFontSize: CGFloat {
-        max(previewFontSize - 1, 10)
+        previewFontSize
+    }
+
+    /// 链接预览里相对正文字号缩放（设计稿基准 13pt）。
+    private func linkScaled(_ basePoints: CGFloat) -> CGFloat {
+        QuickPanelPreviewFontSize.scaled(basePoints, bodyPoints: previewFontSize)
     }
 
     struct CodePreviewSummary: Equatable {
@@ -588,6 +593,7 @@ struct QuickPreviewPane: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
                 } else {
+                    // 装饰图标固定尺寸，不跟正文字号放大，避免撑破框叠到旁边。
                     Image(systemName: "globe")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -622,17 +628,19 @@ struct QuickPreviewPane: View {
 
                     if let title = item.linkTitle, !title.isEmpty {
                         Text(title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
+                            .font(.system(size: linkScaled(14), weight: .semibold))
+                            .lineLimit(2)
                             .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Text(url.absoluteString)
-                        .font(.system(size: 11))
+                        .font(.system(size: previewFontSize))
                         .foregroundStyle(Color.accentColor)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -641,6 +649,7 @@ struct QuickPreviewPane: View {
     private func quickMetadataBadge(_ text: String) -> some View {
         // Bump lowercase text slightly so its x-height roughly matches
         // cap-height of uppercase siblings (e.g. "HTTPS" badge).
+        // Badge 是 chrome，固定字号，不随预览正文放大。
         let hasLowercase = text.contains(where: { $0.isLowercase })
         return Text(text)
             .font(.system(size: hasLowercase ? 12 : 10, weight: .medium, design: .rounded))
@@ -652,7 +661,7 @@ struct QuickPreviewPane: View {
 
     @ViewBuilder
     private func linkStaticPreview(url: URL) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             if let img = validFavicon(minSize: 32) {
                 Image(nsImage: img)
                     .resizable()
@@ -661,8 +670,9 @@ struct QuickPreviewPane: View {
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
+                // 装饰图标固定在框内；跟正文字号联动会溢出叠到下方 badge。
                 Image(systemName: "globe")
-                    .font(.system(size: 36, weight: .light))
+                    .font(.system(size: 28, weight: .light))
                     .foregroundStyle(.secondary)
                     .frame(width: 48, height: 48)
                     .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
@@ -670,9 +680,10 @@ struct QuickPreviewPane: View {
 
             if let title = item.linkTitle, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: linkScaled(17), weight: .semibold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 6) {
@@ -683,19 +694,22 @@ struct QuickPreviewPane: View {
             }
 
             Text(url.absoluteString)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: previewFontSize, weight: .medium))
                 .foregroundStyle(Color.accentColor)
-                .lineLimit(2)
+                .lineLimit(3)
                 .multilineTextAlignment(.center)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
 
             let path = Self.displayPath(for: url)
             if !path.isEmpty {
                 Text(path)
-                    .font(.system(size: 11))
+                    .font(.system(size: max(previewFontSize - 2, CGFloat(QuickPanelPreviewFontSize.minimumPoints))))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Button {

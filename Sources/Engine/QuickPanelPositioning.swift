@@ -181,16 +181,23 @@ enum QuickPanelImageGridDensity: String, CaseIterable {
 }
 
 /// 快捷面板预览正文的字号。存的就是 pt，默认 13，与改之前的硬编码一致。
+/// 只夹紧下限（1pt）；上限不限，设置里可一直加大。
 enum QuickPanelPreviewFontSize {
     static let defaultPoints = 13
-    static let options = [11, 12, 13, 14, 15, 16, 18, 20]
+    static let minimumPoints = 1
 
     static func resolved(_ stored: Int) -> Int {
-        options.contains(stored) ? stored : defaultPoints
+        max(stored, minimumPoints)
     }
 
     static func resolvedPoints(_ stored: Int) -> CGFloat {
         CGFloat(resolved(stored))
+    }
+
+    /// 以默认 13pt 为基准，把设计稿上的字号按当前正文字号等比缩放。
+    static func scaled(_ basePoints: CGFloat, bodyPoints: CGFloat) -> CGFloat {
+        let scale = bodyPoints / CGFloat(defaultPoints)
+        return max((basePoints * scale).rounded(), CGFloat(minimumPoints))
     }
 }
 

@@ -895,6 +895,9 @@ Usa %@ per incollare uno per uno.";
 "settings.imageGridDensity.dense" = "Fitta";
 "settings.previewFontSize" = "Dimensione carattere anteprima";
 "settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "Dimensione del corpo dell’anteprima (testo semplice, formattato e OCR Markdown). Titoli e URL dei link si adattano.";
+"settings.previewFontSize.reset" = "Ripristina predefinito";
+"settings.previewFontSize.scrub" = "Digita una dimensione, oppure tieni premuto − / +";
 
 "settings.ocr.memoryHint" = "Se attivo, PasteMemo riconosce il testo nelle immagini in background tramite Vision, il che può aumentare l’uso della memoria.";
 

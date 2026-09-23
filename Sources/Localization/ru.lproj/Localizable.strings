@@ -905,6 +905,9 @@
 "settings.imageGridDensity.dense" = "Плотная";
 "settings.previewFontSize" = "Размер шрифта предпросмотра";
 "settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "Размер основного текста предпросмотра (обычный, форматированный и Markdown OCR). Заголовки и URL ссылок масштабируются.";
+"settings.previewFontSize.reset" = "Сбросить по умолчанию";
+"settings.previewFontSize.scrub" = "Введите размер или удерживайте − / +";
 
 "settings.ocr.memoryHint" = "Когда включено, PasteMemo распознаёт текст на изображениях в фоне с помощью Vision, что может увеличить расход памяти.";
 

@@ -879,6 +879,9 @@
 "settings.imageGridDensity.dense" = "Dense";
 "settings.previewFontSize" = "Preview font size";
 "settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "Body text size for preview (plain, rich text, and Markdown OCR). Link titles and URLs scale with it.";
+"settings.previewFontSize.reset" = "Reset to default";
+"settings.previewFontSize.scrub" = "Type a size, or hold − / + to adjust";
 
 "settings.ocr.memoryHint" = "When on, PasteMemo recognizes text in images in the background using Vision, which may increase memory usage.";
 

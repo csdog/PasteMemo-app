@@ -879,6 +879,9 @@
 "settings.imageGridDensity.dense" = "密";
 "settings.previewFontSize" = "预览字体大小";
 "settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "预览正文字号（纯文本、富文本、识别为 Markdown 的 OCR）。链接标题与 URL 会随之缩放。";
+"settings.previewFontSize.reset" = "恢复默认";
+"settings.previewFontSize.scrub" = "可直接输入，或按住 − / + 连续调节";
 
 "settings.ocr.memoryHint" = "开启后会在后台用 Vision 识别图片中的文字，可能增加内存占用。";
 

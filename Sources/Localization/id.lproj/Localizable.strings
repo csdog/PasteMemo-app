@@ -905,6 +905,9 @@ Gunakan %@ untuk menempel satu per satu.";
 "settings.imageGridDensity.dense" = "Rapat";
 "settings.previewFontSize" = "Ukuran font pratinjau";
 "settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "Ukuran teks isi pratinjau (teks biasa, kaya, dan OCR Markdown). Judul dan URL tautan ikut menyesuaikan.";
+"settings.previewFontSize.reset" = "Reset ke bawaan";
+"settings.previewFontSize.scrub" = "Ketik ukuran, atau tahan − / + untuk menyesuaikan";
 
 "settings.ocr.memoryHint" = "Saat aktif, PasteMemo mengenali teks pada gambar di latar belakang dengan Vision, yang dapat menambah penggunaan memori.";
 

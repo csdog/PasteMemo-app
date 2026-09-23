@@ -642,10 +642,13 @@ struct QuickPanelPane: View {
                         }
                     }
                 }
-                Picker(L10n.tr("settings.previewFontSize"), selection: previewFontSizeSelection) {
-                    ForEach(QuickPanelPreviewFontSize.options, id: \.self) { size in
-                        Text(L10n.tr("settings.previewFontSize.points", size)).tag(size)
-                    }
+                HStack {
+                    Text(L10n.tr("settings.previewFontSize"))
+                    NativeToolTipIcon(text: L10n.tr("settings.previewFontSize.hint"))
+                        .frame(width: 16, height: 16)
+                    Spacer(minLength: 12)
+                    PreviewFontSizeStepper(value: previewFontSizeSelection)
+                        .fixedSize()
                 }
                 HStack {
                     Text(L10n.tr("settings.quickPanelPosition"))
@@ -1308,5 +1311,153 @@ private struct NativeToolTipIcon: NSViewRepresentable {
 
     func updateNSView(_ view: NSImageView, context: Context) {
         view.toolTip = text
+    }
+}
+
+/// 预览字号：↺ 重置 + `− N +` 胶囊；可输入，按住 ± 连续调节，下限 1pt，无上限。
+private struct PreviewFontSizeStepper: View {
+    @Binding var value: Int
+    @State private var draft: String = ""
+    @State private var holdTask: Task<Void, Never>?
+    @FocusState private var isEditing: Bool
+
+    private var resolved: Int {
+        QuickPanelPreviewFontSize.resolved(value)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                stopHold()
+                isEditing = false
+                value = QuickPanelPreviewFontSize.defaultPoints
+                draft = "\(QuickPanelPreviewFontSize.defaultPoints)"
+            } label: {
+                Image(systemName: "arrow.counterclockwise")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(resolved == QuickPanelPreviewFontSize.defaultPoints ? .tertiary : .secondary)
+            }
+            .buttonStyle(.plain)
+            .disabled(resolved == QuickPanelPreviewFontSize.defaultPoints && !isEditing)
+            .help(L10n.tr("settings.previewFontSize.reset"))
+            .accessibilityLabel(L10n.tr("settings.previewFontSize.reset"))
+
+            HStack(spacing: 0) {
+                holdStepButton(
+                    systemName: "minus",
+                    enabled: resolved > QuickPanelPreviewFontSize.minimumPoints,
+                    step: -1
+                )
+
+                TextField("", text: $draft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .medium))
+                    .monospacedDigit()
+                    .multilineTextAlignment(.center)
+                    .frame(width: 40)
+                    .padding(.vertical, 2)
+                    .focused($isEditing)
+                    .onSubmit {
+                        commitDraft()
+                        isEditing = false
+                    }
+                    .help(L10n.tr("settings.previewFontSize.scrub"))
+                    .accessibilityLabel(L10n.tr("settings.previewFontSize.points", resolved))
+                    .accessibilityValue(draft)
+                    .accessibilityAdjustableAction { direction in
+                        switch direction {
+                        case .increment: applyStep(1)
+                        case .decrement: applyStep(-1)
+                        @unknown default: break
+                        }
+                    }
+
+                holdStepButton(
+                    systemName: "plus",
+                    enabled: true,
+                    step: 1
+                )
+            }
+            .fixedSize()
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .onChange(of: isEditing) { _, editing in
+                if editing {
+                    stopHold()
+                    draft = "\(resolved)"
+                } else {
+                    commitDraft()
+                }
+            }
+            .onChange(of: value) { _, newValue in
+                guard !isEditing else { return }
+                draft = "\(QuickPanelPreviewFontSize.resolved(newValue))"
+            }
+            .onAppear { draft = "\(resolved)" }
+            .onDisappear { stopHold() }
+        }
+        .fixedSize()
+    }
+
+    private func holdStepButton(systemName: String, enabled: Bool, step: Int) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(enabled ? .primary : .tertiary)
+            .frame(width: 22, height: 22)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in
+                        guard enabled else { return }
+                        startHold(step: step)
+                    }
+                    .onEnded { _ in
+                        stopHold()
+                    }
+            )
+            .opacity(enabled ? 1 : 0.45)
+            .allowsHitTesting(enabled)
+            .accessibilityLabel(systemName == "plus" ? "Increase" : "Decrease")
+            .accessibilityAddTraits(.isButton)
+    }
+
+    private func startHold(step: Int) {
+        guard holdTask == nil else { return }
+        isEditing = false
+        applyStep(step)
+        holdTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(380))
+            while !Task.isCancelled {
+                applyStep(step)
+                try? await Task.sleep(for: .milliseconds(70))
+            }
+        }
+    }
+
+    private func stopHold() {
+        holdTask?.cancel()
+        holdTask = nil
+    }
+
+    private func applyStep(_ step: Int) {
+        if step < 0, resolved <= QuickPanelPreviewFontSize.minimumPoints {
+            stopHold()
+            return
+        }
+        let next = QuickPanelPreviewFontSize.resolved(resolved + step)
+        value = next
+        draft = "\(next)"
+        if step < 0, next <= QuickPanelPreviewFontSize.minimumPoints {
+            stopHold()
+        }
+    }
+
+    private func commitDraft() {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let parsed = Int(trimmed) {
+            value = QuickPanelPreviewFontSize.resolved(parsed)
+        }
+        draft = "\(QuickPanelPreviewFontSize.resolved(value))"
     }
 }

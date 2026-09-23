@@ -935,6 +935,9 @@ Usa %@ para pegar uno por uno.";
 "settings.imageGridDensity.dense" = "Densa";
 "settings.previewFontSize" = "Tamaño de fuente de la vista previa";
 "settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "Tamaño del cuerpo de la vista previa (texto plano, enriquecido y OCR Markdown). Títulos y URL de enlaces se ajustan.";
+"settings.previewFontSize.reset" = "Restablecer valor predeterminado";
+"settings.previewFontSize.scrub" = "Escribe un tamaño, o mantén pulsado − / +";
 
 "settings.ocr.memoryHint" = "Cuando está activado, PasteMemo reconoce el texto de las imágenes en segundo plano con Vision, lo que puede aumentar el uso de memoria.";
 
