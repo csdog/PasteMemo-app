@@ -929,6 +929,11 @@
 "settings.imageGridDensity.sparse" = "粗";
 "settings.imageGridDensity.medium" = "中";
 "settings.imageGridDensity.dense" = "密";
+"settings.previewFontSize" = "プレビューのフォントサイズ";
+"settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "プレビュー本文のサイズ（プレーン／リッチテキスト、Markdown OCR）。リンクのタイトルと URL も連動します。";
+"settings.previewFontSize.reset" = "デフォルトに戻す";
+"settings.previewFontSize.scrub" = "数値を入力するか、− / + を長押しして調整";
 
 "settings.ocr.memoryHint" = "オンにすると、Vision を使って画像内の文字をバックグラウンドで認識します。メモリ使用量が増えることがあります。";
 

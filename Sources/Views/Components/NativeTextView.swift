@@ -102,6 +102,8 @@ struct NativeTextView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let textView = scrollView.documentView as! NSTextView
         textView.isEditable = isEditable
+        textView.font = .systemFont(ofSize: fontSize)
+        textView.textColor = textColor
         context.coordinator.onTextChange = onTextChange
         context.coordinator.onEscape = onEscape
 
@@ -111,16 +113,19 @@ struct NativeTextView: NSViewRepresentable {
         // Fast path: rich render disabled OR no rich data — render plain string only, skip all decoding.
         guard allowRichRender, let rtfData = richTextData else {
             let wasRich = context.coordinator.lastRichTextData != nil
+            let fontChanged = abs(context.coordinator.lastFontSize - fontSize) > 0.1
             context.coordinator.lastRichTextData = nil
             context.coordinator.lastLayoutWidth = 0
+            context.coordinator.lastFontSize = fontSize
             var textWasReplaced = false
-            if wasRich {
+            if wasRich || fontChanged {
                 // Switching from rich → plain on the same view: setting
                 // `.string` only replaces the characters and keeps the prior
                 // attributed run's typing attributes (bold/colors/font), so
                 // the visual still looks formatted. Force a fully attributed
                 // overwrite with the default plain attrs to clear all
                 // inherited formatting.
+                // fontChanged 同理：已有 run 的 .font 不会跟着 textView.font 变。
                 let plain = NSAttributedString(string: text, attributes: [
                     .font: NSFont.systemFont(ofSize: fontSize),
                     .foregroundColor: textColor,
@@ -129,6 +134,8 @@ struct NativeTextView: NSViewRepresentable {
                 textWasReplaced = true
             } else if textView.string != text {
                 textView.string = text
+                textView.font = .systemFont(ofSize: fontSize)
+                textView.textColor = textColor
                 textWasReplaced = true
             }
             let searchChanged = context.coordinator.lastSearchText != searchText
@@ -147,21 +154,27 @@ struct NativeTextView: NSViewRepresentable {
         let currentWidth = textView.textContainer?.size.width ?? 0
         let widthChanged = abs(currentWidth - context.coordinator.lastLayoutWidth) > 1
         let dataChanged = rtfData != context.coordinator.lastRichTextData
-        guard dataChanged || widthChanged else { return }
+        let fontChanged = abs(context.coordinator.lastFontSize - fontSize) > 0.1
+        guard dataChanged || widthChanged || fontChanged else { return }
+
+        context.coordinator.lastFontSize = fontSize
 
         // Serve from cache instantly if we've decoded the same (itemID, data, width) combo recently.
+        // 字号不进 cache key：解码结果按正文字号在应用时等比缩放，切换字号不必重解。
         if let id = itemID,
            let cached = RichTextCache.shared.get(itemID: id, data: rtfData, width: currentWidth) {
             context.coordinator.lastRichTextData = rtfData
             context.coordinator.lastLayoutWidth = currentWidth
-            textView.textStorage?.setAttributedString(cached)
+            textView.textStorage?.setAttributedString(
+                Self.applyingBodyFontSize(cached, bodyPoints: fontSize)
+            )
             return
         }
 
         // Show the plain string immediately so the viewport isn't blank while we decode.
         // 用完整的 attributed 覆盖而不是只写 `.string`：后者保留上一条富文本留下的
         // 字体/颜色（同 plain 分支的注释），而这里也是解码被否决时的最终画面。
-        if textView.string.isEmpty || dataChanged {
+        if textView.string.isEmpty || dataChanged || fontChanged {
             textView.textStorage?.setAttributedString(NSAttributedString(string: text, attributes: [
                 .font: NSFont.systemFont(ofSize: fontSize),
                 .foregroundColor: textColor,
@@ -177,6 +190,7 @@ struct NativeTextView: NSViewRepresentable {
         let itemIDLocal = itemID
         let dataLocal = rtfData
         let widthLocal = currentWidth
+        let fontSizeLocal = fontSize
         let coordinator = context.coordinator
         let token = coordinator.beginDecodeToken()
         let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -194,8 +208,43 @@ struct NativeTextView: NSViewRepresentable {
             if let id = itemIDLocal {
                 RichTextCache.shared.set(itemID: id, data: dataLocal, width: widthLocal, value: attr)
             }
-            textView.textStorage?.setAttributedString(attr)
+            // 若解码期间字号又变了，用当前 coordinator 记录的字号，避免用过期值盖回去。
+            let body = coordinator.lastFontSize > 0 ? coordinator.lastFontSize : fontSizeLocal
+            textView.textStorage?.setAttributedString(
+                Self.applyingBodyFontSize(attr, bodyPoints: body)
+            )
         }
+    }
+
+    /// 把富文本里占比最大的字号当作正文，整体等比缩放到 `bodyPoints`。
+    /// 标题等相对层级保留；链接 / 加粗等 trait 跟着原字体走。
+    @MainActor
+    static func applyingBodyFontSize(_ source: NSAttributedString, bodyPoints: CGFloat) -> NSAttributedString {
+        let fullRange = NSRange(location: 0, length: source.length)
+        guard fullRange.length > 0 else { return source }
+
+        var sizeWeights: [CGFloat: Int] = [:]
+        source.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            guard let font = value as? NSFont else { return }
+            let key = (font.pointSize * 10).rounded() / 10
+            sizeWeights[key, default: 0] += range.length
+        }
+        let baseSize = sizeWeights.max(by: { $0.value < $1.value })?.key ?? bodyPoints
+        guard baseSize > 0.1 else { return source }
+        let scale = bodyPoints / baseSize
+        if abs(scale - 1) < 0.01 { return source }
+
+        let result = NSMutableAttributedString(attributedString: source)
+        result.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            if let font = value as? NSFont {
+                let sized = NSFont(descriptor: font.fontDescriptor, size: max(font.pointSize * scale, 1))
+                    ?? .systemFont(ofSize: bodyPoints)
+                result.addAttribute(.font, value: sized, range: range)
+            } else {
+                result.addAttribute(.font, value: NSFont.systemFont(ofSize: bodyPoints), range: range)
+            }
+        }
+        return result
     }
 
     // MARK: - Decoding (nonisolated: safe on background)
@@ -370,6 +419,7 @@ struct NativeTextView: NSViewRepresentable {
         var lastRichTextData: Data?
         var lastLayoutWidth: CGFloat = 0
         var lastSearchText: String = ""
+        var lastFontSize: CGFloat = 0
         private var decodeToken: Int = 0
         private var highlightTask: Task<Void, Never>?
 

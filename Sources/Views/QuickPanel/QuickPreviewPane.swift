@@ -7,11 +7,26 @@ struct QuickPreviewPane: View {
     var searchText: String = ""
     @AppStorage(OCRTaskCoordinator.enableOCRKey) private var ocrEnabled = true
     @AppStorage("richTextPreviewEnabled") private var richTextPreviewEnabled = true
+    @AppStorage(QuickPanelSettings.previewFontSizeKey) private var previewFontSizeStored = QuickPanelPreviewFontSize.defaultPoints
     @State private var allowHeavyPreview = false
     @State private var webPreviewReady = false
     @State private var cachedCodeSummary: CodePreviewSummary?
     @State private var dataURIImageData: Data?
     @State private var ocrCardWidth: CGFloat = 0
+
+    private var previewFontSize: CGFloat {
+        QuickPanelPreviewFontSize.resolvedPoints(previewFontSizeStored)
+    }
+
+    /// OCR（含识别为 Markdown）用配置的正文字号；标题等层级由 Markdown 语法本身表达。
+    private var ocrFontSize: CGFloat {
+        previewFontSize
+    }
+
+    /// 链接预览里相对正文字号缩放（设计稿基准 13pt）。
+    private func linkScaled(_ basePoints: CGFloat) -> CGFloat {
+        QuickPanelPreviewFontSize.scaled(basePoints, bodyPoints: previewFontSize)
+    }
 
     struct CodePreviewSummary: Equatable {
         let language: CodeLanguage
@@ -185,7 +200,7 @@ struct QuickPreviewPane: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let smsText = item.smsMessageText, item.contentType == .text {
             // 短信验证码条目:大号显示码 + 短信原文,不走普通文本渲染
-            SMSCodePreview(code: item.content, message: smsText)
+            SMSCodePreview(code: item.content, message: smsText, messageFontSize: previewFontSize)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if item.contentType == .text {
             previewContent
@@ -259,6 +274,7 @@ struct QuickPreviewPane: View {
                     // 仅对纯文本类型启用搜索高亮，避免在 code / link / mixed 等
                     // 特殊渲染路径上意外染色（rich-text 分支本身已忽略 searchText）
                     searchText: item.contentType == .text ? searchText : "",
+                    fontSize: previewFontSize,
                     hidesScrollerTrack: true
                 )
                     .id(item.persistentModelID)
@@ -281,7 +297,7 @@ struct QuickPreviewPane: View {
                     .shadow(color: Color(nsColor: parsed.nsColor).opacity(0.4), radius: 8, y: 3)
 
                 Text(parsed.formatted(displayFmt))
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    .font(.system(size: previewFontSize, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
 
@@ -312,7 +328,7 @@ struct QuickPreviewPane: View {
         } else {
             // Fallback: show raw color text if parsing fails
             Text(item.content)
-                .font(.system(size: 13, design: .monospaced))
+                .font(.system(size: previewFontSize, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
@@ -382,13 +398,13 @@ struct QuickPreviewPane: View {
                 allowRichRender: false,
                 itemID: item.itemID,
                 searchText: searchText,
-                fontSize: 12,
+                fontSize: ocrFontSize,
                 textColor: .secondaryLabelColor,
                 hidesScrollerTrack: true
             )
             .id(item.persistentModelID)
             .frame(height: ocrCardWidth > 0
-                ? min(max(NativeTextView.measuredHeight(text: text, width: ocrCardWidth, fontSize: 12), 36), 120)
+                ? min(max(NativeTextView.measuredHeight(text: text, width: ocrCardWidth, fontSize: ocrFontSize), 36), 120)
                 : 56)
             .onGeometryChange(for: CGFloat.self) { proxy in
                 proxy.size.width
@@ -502,6 +518,7 @@ struct QuickPreviewPane: View {
                 richTextType: item.richTextType,
                 allowRichRender: richTextPreviewEnabled && allowHeavyPreview,
                 itemID: item.itemID,
+                fontSize: previewFontSize,
                 hidesScrollerTrack: true
             )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -547,13 +564,14 @@ struct QuickPreviewPane: View {
                 language: item.resolvedCodeLanguage,
                 deferredHighlightDelayMs: 120,
                 maximumHighlightedCharacters: 12_000,
-                hidesScrollerTrack: true
+                hidesScrollerTrack: true,
+                fontSize: previewFontSize
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 Text(summary.snippet)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: previewFontSize, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -575,6 +593,7 @@ struct QuickPreviewPane: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 28, height: 28)
                 } else {
+                    // 装饰图标固定尺寸，不跟正文字号放大，避免撑破框叠到旁边。
                     Image(systemName: "globe")
                         .font(.system(size: 16, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -609,17 +628,19 @@ struct QuickPreviewPane: View {
 
                     if let title = item.linkTitle, !title.isEmpty {
                         Text(title)
-                            .font(.system(size: 14, weight: .semibold))
-                            .lineLimit(1)
+                            .font(.system(size: linkScaled(14), weight: .semibold))
+                            .lineLimit(2)
                             .truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     Text(url.absoluteString)
-                        .font(.system(size: 11))
+                        .font(.system(size: previewFontSize))
                         .foregroundStyle(Color.accentColor)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -628,6 +649,7 @@ struct QuickPreviewPane: View {
     private func quickMetadataBadge(_ text: String) -> some View {
         // Bump lowercase text slightly so its x-height roughly matches
         // cap-height of uppercase siblings (e.g. "HTTPS" badge).
+        // Badge 是 chrome，固定字号，不随预览正文放大。
         let hasLowercase = text.contains(where: { $0.isLowercase })
         return Text(text)
             .font(.system(size: hasLowercase ? 12 : 10, weight: .medium, design: .rounded))
@@ -639,7 +661,7 @@ struct QuickPreviewPane: View {
 
     @ViewBuilder
     private func linkStaticPreview(url: URL) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             if let img = validFavicon(minSize: 32) {
                 Image(nsImage: img)
                     .resizable()
@@ -648,8 +670,9 @@ struct QuickPreviewPane: View {
                     .frame(width: 48, height: 48)
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             } else {
+                // 装饰图标固定在框内；跟正文字号联动会溢出叠到下方 badge。
                 Image(systemName: "globe")
-                    .font(.system(size: 36, weight: .light))
+                    .font(.system(size: 28, weight: .light))
                     .foregroundStyle(.secondary)
                     .frame(width: 48, height: 48)
                     .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
@@ -657,9 +680,10 @@ struct QuickPreviewPane: View {
 
             if let title = item.linkTitle, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.system(size: linkScaled(17), weight: .semibold))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 6) {
@@ -670,19 +694,22 @@ struct QuickPreviewPane: View {
             }
 
             Text(url.absoluteString)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: previewFontSize, weight: .medium))
                 .foregroundStyle(Color.accentColor)
-                .lineLimit(2)
+                .lineLimit(3)
                 .multilineTextAlignment(.center)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
 
             let path = Self.displayPath(for: url)
             if !path.isEmpty {
                 Text(path)
-                    .font(.system(size: 11))
+                    .font(.system(size: max(previewFontSize - 2, CGFloat(QuickPanelPreviewFontSize.minimumPoints))))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Button {

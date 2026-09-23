@@ -931,6 +931,11 @@
 "settings.imageGridDensity.sparse" = "넓게";
 "settings.imageGridDensity.medium" = "보통";
 "settings.imageGridDensity.dense" = "좁게";
+"settings.previewFontSize" = "미리보기 글자 크기";
+"settings.previewFontSize.points" = "%d pt";
+"settings.previewFontSize.hint" = "미리보기 본문 크기(일반·서식 있는 텍스트, Markdown OCR). 링크 제목과 URL도 함께 조절됩니다.";
+"settings.previewFontSize.reset" = "기본값으로 재설정";
+"settings.previewFontSize.scrub" = "직접 입력하거나 − / + 를 길게 눌러 조절";
 
 "settings.ocr.memoryHint" = "켜면 Vision으로 이미지 속 문자를 백그라운드에서 인식합니다. 메모리 사용량이 늘어날 수 있습니다.";
 

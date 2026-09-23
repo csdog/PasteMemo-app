@@ -8,6 +8,7 @@ struct CodePreviewView: NSViewRepresentable {
     var deferredHighlightDelayMs: Int? = nil
     var maximumHighlightedCharacters: Int? = nil
     var hidesScrollerTrack: Bool = false
+    var fontSize: CGFloat = 13
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
@@ -46,7 +47,18 @@ struct CodePreviewView: NSViewRepresentable {
     }
 
     private func viewKey(appearance: String) -> String {
-        "\(code)-\(language?.rawValue ?? "")-\(appearance)-\(deferredHighlightDelayMs ?? -1)-\(maximumHighlightedCharacters ?? -1)"
+        "\(code)-\(language?.rawValue ?? "")-\(appearance)-\(deferredHighlightDelayMs ?? -1)-\(maximumHighlightedCharacters ?? -1)-\(fontSize)"
+    }
+
+    private func applyingPreviewFont(_ source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString(attributedString: source)
+        let fullRange = NSRange(location: 0, length: result.length)
+        result.addAttribute(
+            .font,
+            value: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular),
+            range: fullRange
+        )
+        return result
     }
 
     private func applyInitialContent(_ textView: NSTextView, coordinator: Coordinator) {
@@ -57,16 +69,16 @@ struct CodePreviewView: NSViewRepresentable {
         let plainText = SyntaxHighlighter.highlightOffMain(code, language: lang, isDark: isDark)
 
         if let maximumHighlightedCharacters, code.count > maximumHighlightedCharacters {
-            textView.textStorage?.setAttributedString(plainText)
+            textView.textStorage?.setAttributedString(applyingPreviewFont(plainText))
             return
         }
 
         if let cached = SyntaxHighlighter.cachedHighlight(code, language: lang, isDark: isDark) {
-            textView.textStorage?.setAttributedString(cached)
+            textView.textStorage?.setAttributedString(applyingPreviewFont(cached))
             return
         }
 
-        textView.textStorage?.setAttributedString(plainText)
+        textView.textStorage?.setAttributedString(applyingPreviewFont(plainText))
 
         let delayMs = deferredHighlightDelayMs ?? 0
         coordinator.highlightTask = Task { @MainActor in
@@ -76,7 +88,7 @@ struct CodePreviewView: NSViewRepresentable {
             }
             let highlighted = await SyntaxHighlighter.highlightAsync(code, language: lang, isDark: isDark)
             guard !Task.isCancelled else { return }
-            textView.textStorage?.setAttributedString(highlighted)
+            textView.textStorage?.setAttributedString(self.applyingPreviewFont(highlighted))
         }
     }
 }
