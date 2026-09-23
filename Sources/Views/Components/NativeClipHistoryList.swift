@@ -110,6 +110,19 @@ enum ClipHistoryPaginationHelper {
     }
 }
 
+/// 面板打开后、用户尚未交互时：仅当列表**首条**身份变化（新剪贴赶到）才重选默认项。
+/// 分页 `loadMore` 只追加更旧条目，首条不变，绝不能把视口拉回顶部。
+enum ClipHistoryItemsChangeHelper {
+    static func shouldSelectDefaultOnItemsChange<ID: Equatable>(
+        userInteractedSinceShow: Bool,
+        previousFirstID: ID?,
+        newFirstID: ID?
+    ) -> Bool {
+        guard !userInteractedSinceShow else { return false }
+        return previousFirstID != newFirstID
+    }
+}
+
 struct NativeClipHistoryList<RowContent: View, HeaderContent: View, ContextMenuContent: View, PaletteContent: View>: NSViewRepresentable {
     let rows: [ClipHistoryListBuilder.Row]
     let rowIndexByItemID: [PersistentIdentifier: Int]

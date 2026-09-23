@@ -132,6 +132,32 @@ struct ClipHistoryListBuilderTests {
         )
     }
 
+    @Test("Items change selects default only for a new first item before any interaction")
+    func itemsChangeSelectsDefaultOnlyWhenFirstItemChangesBeforeInteraction() {
+        #expect(
+            ClipHistoryItemsChangeHelper.shouldSelectDefaultOnItemsChange(
+                userInteractedSinceShow: false,
+                previousFirstID: "a",
+                newFirstID: "b"
+            )
+        )
+        // loadMore：首条不变，不能重选（否则会闪回顶部）
+        #expect(
+            !ClipHistoryItemsChangeHelper.shouldSelectDefaultOnItemsChange(
+                userInteractedSinceShow: false,
+                previousFirstID: "a",
+                newFirstID: "a"
+            )
+        )
+        #expect(
+            !ClipHistoryItemsChangeHelper.shouldSelectDefaultOnItemsChange(
+                userInteractedSinceShow: true,
+                previousFirstID: "a",
+                newFirstID: "b"
+            )
+        )
+    }
+
     @Test("Hover intent selects a new row and ignores modifiers or the already-selected item")
     func hoverIntentSelectsUnlessModifierOrAlreadySelected() {
         let first = "a"

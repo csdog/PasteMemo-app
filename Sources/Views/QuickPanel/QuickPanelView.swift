@@ -554,10 +554,19 @@ struct QuickPanelView: View {
             pill = nil
         }
         .onChange(of: store.items) {
+            // 先记下重建前的首条：分页 loadMore 只追加尾部，首条不变；
+            // 若误走 selectDefault 会把 lastNavigatedID 拉回第一条并闪回顶部。
+            let previousFirstID = cachedDisplayOrder.first?.persistentModelID
             rebuildGroupedItems()
-            // 面板可见但用户还没任何操作：这次数据刷新多半是打开一瞬间赶到的新剪贴
-            // （轮询延迟跨过了 show），选中跟随新的第一条，保持「列表顶部 = 预览」。
-            if HotkeyManager.shared.isQuickPanelVisible, !userInteractedSinceShow {
+            let newFirstID = cachedDisplayOrder.first?.persistentModelID
+            // 面板可见但用户还没任何操作：仅当首条身份变了（打开瞬间赶到的新剪贴），
+            // 才选中跟随新的第一条。纯滚动续页绝不能重选。
+            if HotkeyManager.shared.isQuickPanelVisible,
+               ClipHistoryItemsChangeHelper.shouldSelectDefaultOnItemsChange(
+                   userInteractedSinceShow: userInteractedSinceShow,
+                   previousFirstID: previousFirstID,
+                   newFirstID: newFirstID
+               ) {
                 selectDefaultHistoryItem()
                 return
             }
@@ -1316,6 +1325,8 @@ struct QuickPanelView: View {
                 isSearchFocused = true
             },
             onLoadMore: {
+                // 滚动续页也算一次交互，避免后续 items 刷新误走「未操作 → 重选首条」。
+                userInteractedSinceShow = true
                 store.loadMore()
             },
             rowContent: { item, isSelected in
